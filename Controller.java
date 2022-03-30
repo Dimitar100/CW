@@ -7,6 +7,7 @@ import java.util.HashSet;
 public class Controller {
     private static int index = 0;
     private static HashSet<Integer> dstores;
+    private static PrintStream client_out; // should be hashset
 
     public static void main(String [] args) {
         ServerSocket ss = null;
@@ -21,8 +22,9 @@ public class Controller {
 
             while (true) {
                 Socket client = ss.accept(); // accept connections
+               // System.out.println(client.connect);
                 //Read on cport
-                new Thread(new ServiceThread(client, R)).start();
+                new Thread(new ServiceThread(client, R, ss)).start();
             }
         } catch(Exception e) { System.err.println("error: " + e);
         } finally {
@@ -36,12 +38,14 @@ public class Controller {
         PrintStream out_to_client;
         Socket client;
         int required_dstores;
+        ServerSocket ss;
 
-        ServiceThread(Socket client, int R) throws IOException {
+        ServiceThread(Socket client, int R, ServerSocket ss) throws IOException {
             this.client = client;
             out_to_client = new PrintStream(client.getOutputStream());
             in = new BufferedReader(new InputStreamReader(client.getInputStream()));
             required_dstores = R;
+            this.ss = ss;
         }
         public void run() {
             try {
@@ -50,14 +54,20 @@ public class Controller {
 
                     System.out.println(line);
 
-                    if(line.contains("JOIN")){
+                    if(line.contains("JOIN")) {
                         dstores.add(convertStringToInt(line.split(" ")[1]));
+                    }else if(line.contains("STORE_ACK")){
+                        //Once Controller received all acks updates index, “store complete”
+                        // Защо не бачка //Нова нишка мисля че ще оправи проблема
+                        //System.out.println(client.getPort());
+                        new Thread(new ClientConnection(client_out, "STORE_COMPLETE", ss)).start();
                     }else{
                         if(dstores.size() < required_dstores){
                             out_to_client.println("ERROR_NOT_ENOUGH_DSTORES");
                         }else{
                             //Connect with client;
-                            new Thread(new ClientConnection(out_to_client, line)).start();
+                            client_out =out_to_client;
+                            new Thread(new ClientConnection(out_to_client, line, ss)).start();
                             //
                         }
                     }
@@ -70,16 +80,17 @@ public class Controller {
     static class ClientConnection implements Runnable {
         PrintStream out;
         String cmd;
-        ClientConnection(PrintStream out, String s) {
+        ServerSocket ss;
+        ClientConnection(PrintStream out, String s, ServerSocket ss) {
             this.out=out;
             cmd = s;
+            this.ss = ss;
         }
         public void run() {
             String command = cmd.split(" ")[0];
             if(command.equals("LIST")){
                 String[] test = new String[2];
-                out.println("LIST test0");
-
+                out.println("LIST test");
             }else if(command.equals("STORE")){
                 // updates index, “store in progress”
                 String dports = "";
@@ -87,12 +98,8 @@ public class Controller {
                     dports = dports + " " + p.toString();
                 }
                 out.println("STORE_TO" + dports);
-            }else if(command.equals("STORE_ACK")){
-                //Once Controller received all acks updates index, “store complete”
-                // Защо не бачка //Нова нишка мисля че ще оправи проблема
-               // out.println("STORE_COMPLETE");
-
-
+            }else if(command.equals("STORE_COMPLETE")){
+                out.println("STORE_COMPLETE");
             }
         }
     }
