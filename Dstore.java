@@ -35,19 +35,21 @@ public class Dstore {
             ss = new ServerSocket(port);
             BufferedReader in = null;
             PrintStream out_to_client = null;
+            OutputStream clientOutputStream = null;
 
             while(true) {
                 Socket client = ss.accept();
                 try {
                     in = new BufferedReader(new InputStreamReader(client.getInputStream()));
                     out_to_client = new PrintStream(client.getOutputStream());
+                    clientOutputStream = client.getOutputStream();
                 } catch(Exception e) { System.err.println("error: " + e); }
 
                 String line;
                 while((line = in.readLine()) != null) {
                     System.out.println(line); //print the received command
 
-                    new Thread(new ClientConnection(out_to_client, out_to_controller, line)).start();
+                    new Thread(new ClientConnection(clientOutputStream, out_to_client, out_to_controller, line)).start();
                 }
                 client.close();
 
@@ -62,40 +64,52 @@ public class Dstore {
     }
 
     static class ClientConnection implements Runnable {
+        OutputStream outputStream;
         PrintStream out_to_client;
         PrintWriter out_to_controller;
         String cmd;
-        ClientConnection(PrintStream out_to_client,  PrintWriter out_to_controller, String cmd) {
+        ClientConnection(OutputStream outputStream, PrintStream out_to_client,  PrintWriter out_to_controller, String cmd) {
+            this.outputStream = outputStream;
             this.out_to_client = out_to_client;
             this.out_to_controller = out_to_controller;
             this.cmd = cmd;
         }
         public void run() {
             try {
-                readCommands(cmd, out_to_client, out_to_controller);
+                readCommands(cmd, outputStream, out_to_client, out_to_controller);
             } catch(Exception e) {
                 System.err.println("error: " + e);
             }
         }
-        private static void readCommands(String cmd, PrintStream out, PrintWriter out_to_controller){
+        private static void readCommands(String cmd, OutputStream outputStream, PrintStream out, PrintWriter out_to_controller) {
             String[] command = cmd.split(" ");
-            if(command[0].equals("LOAD")){
+            if (command[0].equals("LOAD")) {
 
-            }else if(command[0].equals("REMOVE")){
+            } else if (command[0].equals("REMOVE")) {
 
-            }else if(command[0].equals("STORE")){
+            } else if (command[0].equals("STORE")) {
                 out.println("ACK");
-
                 //store file content
-                //Once the Dstore finishes storing the file
                 if (!Files.isDirectory(Paths.get("./store/"))) {
                     File storage_folder = new File("./store/");
                     boolean folder_created = storage_folder.mkdir();
                     if (folder_created) {
                         createFile(command[1], Integer.parseInt(command[2]));
                     }
-                }else{
+                } else {
                     createFile(command[1], Integer.parseInt(command[2]));
+                }
+            } else if(command[0].equals("LOAD_DATA")){
+                //If Dstore does not have the requested file
+                try {
+                    BufferedReader in = new BufferedReader(new FileReader("./store/" + stored_file_name));
+                    String str;
+
+                    while ((str = in.readLine()) != null) {
+                        //System.out.println(str);
+                        outputStream.write(str.getBytes());
+                    }
+                } catch (IOException ignored) {
                 }
             }else{
                 Path fileName = Path.of("./store/" + stored_file_name);
