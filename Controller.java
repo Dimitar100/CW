@@ -8,6 +8,7 @@ public class Controller {
     private static int index = 0;
     private static HashSet<Integer> dstores;
     private static PrintStream client_out; // should be hashset
+    private static HashSet<String> stored_files = new HashSet<>();
 
     public static void main(String [] args) {
         ServerSocket ss = null;
@@ -57,16 +58,15 @@ public class Controller {
                     if(line.contains("JOIN")) {
                         dstores.add(convertStringToInt(line.split(" ")[1]));
                     }else if(line.contains("STORE_ACK")){
-                        //Once Controller received all acks updates index, “store complete”
-                        // Защо не бачка //Нова нишка мисля че ще оправи проблема
-                        //System.out.println(client.getPort());
+                        String file_name = line.split(" ")[1];
+                        stored_files.add(file_name);
                         new Thread(new ClientConnection(client_out, "STORE_COMPLETE", ss)).start();
                     }else{
                         if(dstores.size() < required_dstores){
                             out_to_client.println("ERROR_NOT_ENOUGH_DSTORES");
                         }else{
                             //Connect with client;
-                            client_out =out_to_client;
+                            client_out =out_to_client; // save printstream to client
                             new Thread(new ClientConnection(out_to_client, line, ss)).start();
                             //
                         }
@@ -89,8 +89,12 @@ public class Controller {
         public void run() {
             String command = cmd.split(" ")[0];
             if(command.equals("LIST")){
-                String[] test = new String[2];
-                out.println("LIST test");
+                String files_names = "LIST";
+                for(String s : stored_files){
+                    files_names = files_names + " " + s;
+                }
+                out.println(files_names);
+
             }else if(command.equals("STORE")){
                 // updates index, “store in progress”
                 String dports = "";
@@ -99,7 +103,8 @@ public class Controller {
                 }
                 out.println("STORE_TO" + dports);
             }else if(command.equals("STORE_COMPLETE")){
-                out.println("STORE_COMPLETE");
+                //Once Controller received all acks updates index, “store complete”
+                out.println("STORE_COMPLETE"); // to client
             }
         }
     }
