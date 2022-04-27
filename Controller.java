@@ -2,13 +2,17 @@ package mitko.code;
 
 import java.io.*;
 import java.net.*;
+import java.util.HashMap;
 import java.util.HashSet;
 
 public class Controller {
     private static int index = 0;
     private static HashSet<Integer> dstores;
     private static PrintStream client_out; // should be hashset
-    private static HashSet<String> stored_files = new HashSet<>();
+    private static HashMap<String, Integer> stored_files = new HashMap<>();
+
+    private static Integer index_file_size;
+    private static String index_file_name;
 
     public static void main(String [] args) {
         ServerSocket ss = null;
@@ -58,8 +62,6 @@ public class Controller {
                     if(line.contains("JOIN")) {
                         dstores.add(convertStringToInt(line.split(" ")[1]));
                     }else if(line.contains("STORE_ACK")){
-                        String file_name = line.split(" ")[1];
-                        stored_files.add(file_name);
                         new Thread(new ClientConnection(client_out, "STORE_COMPLETE", ss)).start();
                     }else{
                         if(dstores.size() < required_dstores){
@@ -87,24 +89,31 @@ public class Controller {
             this.ss = ss;
         }
         public void run() {
-            String command = cmd.split(" ")[0];
-            if(command.equals("LIST")){
+            String command[] = cmd.split(" ");
+            if(command[0].equals("LIST")){
                 String files_names = "LIST";
-                for(String s : stored_files){
+                for(String s : stored_files.keySet()){
                     files_names = files_names + " " + s;
                 }
                 out.println(files_names);
 
-            }else if(command.equals("STORE")){
+            }else if(command[0].equals("STORE")){
                 // updates index, “store in progress”
                 String dports = "";
                 for(Integer p : dstores){
                     dports = dports + " " + p.toString();
                 }
+                index_file_name = command[1];
+                index_file_size = Integer.parseInt(command[2]);
                 out.println("STORE_TO" + dports);
-            }else if(command.equals("STORE_COMPLETE")){
+            }else if(command[0].equals("STORE_COMPLETE")){
                 //Once Controller received all acks updates index, “store complete”
+                stored_files.put(index_file_name, index_file_size);
                 out.println("STORE_COMPLETE"); // to client
+            }else if(command[0].equals("LOAD")){
+                Integer[] dports = dstores.toArray(new Integer[0]);
+                //dports[0];
+                out.println("LOAD_FROM " + dports[0]+ " " + stored_files.get(command[1]));
             }
         }
     }
