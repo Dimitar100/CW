@@ -83,12 +83,15 @@ public class Dstore {
         }
         private static void readCommands(String cmd, OutputStream outputStream, PrintStream out, PrintWriter out_to_controller) {
             String[] command = cmd.split(" ");
-            if (command[0].equals("LOAD")) {
+            if (command[0].equals("REMOVE")) {
+                String removed_file_name = command[1];
+                File file = new File("./store/" + removed_file_name);
 
-            } else if (command[0].equals("REMOVE")) {
+                if(file.delete()){
+                    new Thread(new ControllerConnection(out_to_controller, command[0], removed_file_name)).start();
+                }
 
             } else if (command[0].equals("STORE")) {
-                out.println("ACK");
                 //store file content
                 if (!Files.isDirectory(Paths.get("./store/"))) {
                     File storage_folder = new File("./store/");
@@ -99,6 +102,7 @@ public class Dstore {
                 } else {
                     createFile(command[1], Integer.parseInt(command[2]));
                 }
+                out.println("ACK");
             } else if(command[0].equals("LOAD_DATA")){
                 //If Dstore does not have the requested file
                 try {
@@ -109,6 +113,7 @@ public class Dstore {
                         //System.out.println(str);
                         outputStream.write(str.getBytes());
                     }
+                    in.close();
                 } catch (IOException ignored) {
                 }
             }else{
@@ -119,7 +124,7 @@ public class Dstore {
                     e.printStackTrace();
                 }
                 stored_files.put(stored_file_name, stored_file_size);
-                new Thread(new ControllerConnection(out_to_controller, stored_file_name)).start();
+                new Thread(new ControllerConnection(out_to_controller, command[0], stored_file_name)).start();
             }
         }
 
@@ -139,19 +144,28 @@ public class Dstore {
     static class ControllerConnection implements Runnable {
         PrintWriter out;
         String fileName;
-        ControllerConnection(PrintWriter out, String s) {
+        String command;
+        ControllerConnection(PrintWriter out,String command, String s) {
             fileName = s;
+            this.command = command;
             this.out = out;
         }
         public void run() {
             try {
-                sendSTORE_ACK(fileName, out);
+                if(command.equals("REMOVE")){
+                    sendREMOVE_ACK(fileName, out);
+                }else{
+                    sendSTORE_ACK(fileName, out);
+                }
             } catch(Exception e) {
                 System.err.println("error: " + e);
             }
         }
         private void sendSTORE_ACK(String filename, PrintWriter out) {
             out.println("STORE_ACK " + filename);
+        }
+        private void sendREMOVE_ACK(String filename, PrintWriter out) {
+            out.println("REMOVE_ACK " + filename);
         }
     }
 
