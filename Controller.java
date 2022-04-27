@@ -6,7 +6,6 @@ import java.util.HashMap;
 import java.util.HashSet;
 
 public class Controller {
-    private static int index = 0;
     private static HashSet<Integer> dstores;
     private static PrintStream client_out; // should be hashset
     private static HashMap<String, Integer> stored_files = new HashMap<>();
@@ -63,6 +62,10 @@ public class Controller {
                         dstores.add(convertStringToInt(line.split(" ")[1]));
                     }else if(line.contains("STORE_ACK")){
                         new Thread(new ClientConnection(client_out, "STORE_COMPLETE", ss)).start();
+                    }else if(line.contains("REMOVE_ACK")){
+                        //temp
+                        stored_files.remove(line.split(" ")[1]);
+                        new Thread(new ClientConnection(client_out, "REMOVE_COMPLETE", ss)).start();
                     }else{
                         if(dstores.size() < required_dstores){
                             out_to_client.println("ERROR_NOT_ENOUGH_DSTORES");
@@ -114,6 +117,25 @@ public class Controller {
                 Integer[] dports = dstores.toArray(new Integer[0]);
                 //dports[0];
                 out.println("LOAD_FROM " + dports[0]+ " " + stored_files.get(command[1]));
+            }else if(command[0].equals("REMOVE")){
+                //Controller updates index, “remove in progress”
+                Integer[] dports = dstores.toArray(new Integer[0]);
+                InetAddress address = null;
+                Socket socket = null;
+                PrintWriter out_to_dport = null;
+                try {
+                    address = InetAddress.getLocalHost();
+                    for(int dport : dports) {
+                        socket = new Socket(address, dport);
+                        out_to_dport = new PrintWriter(socket.getOutputStream(), true);
+                        out_to_dport.println("REMOVE " + command[1]);
+                    }
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }else if(command[0].equals("REMOVE_COMPLETE")){
+                //update index
+                out.println("REMOVE_COMPLETE"); // to client
             }
         }
     }
