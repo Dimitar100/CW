@@ -2,8 +2,17 @@ package mitko.code;
 
 import java.io.*;
 import java.net.*;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.HashMap;
+import java.util.concurrent.TimeUnit;
 
 public class Dstore {
+
+    private static HashMap<String, Integer> stored_files = new HashMap<>();
+    private static String stored_file_name;
+    private static int stored_file_size;
 
     public static void main(String [] args) {
         Socket socket = null;
@@ -54,8 +63,8 @@ public class Dstore {
 
     static class ClientConnection implements Runnable {
         PrintStream out_to_client;
-        String cmd;
         PrintWriter out_to_controller;
+        String cmd;
         ClientConnection(PrintStream out_to_client,  PrintWriter out_to_controller, String cmd) {
             this.out_to_client = out_to_client;
             this.out_to_controller = out_to_controller;
@@ -67,21 +76,49 @@ public class Dstore {
             } catch(Exception e) {
                 System.err.println("error: " + e);
             }
-            //System.out.println("LIST test1 test2 test3");
         }
         private static void readCommands(String cmd, PrintStream out, PrintWriter out_to_controller){
-            String command = cmd.split(" ")[0];
-            if(command.equals("LOAD")){
+            String[] command = cmd.split(" ");
+            if(command[0].equals("LOAD")){
 
-            }else if(command.equals("REMOVE")){
+            }else if(command[0].equals("REMOVE")){
 
-            }else if(command.equals("STORE")){
+            }else if(command[0].equals("STORE")){
                 out.println("ACK");
+
                 //store file content
                 //Once the Dstore finishes storing the file
-                //out.close();
-                new Thread(new ControllerConnection(out_to_controller, cmd.split(" ")[1])).start();
+                if (!Files.isDirectory(Paths.get("./store/"))) {
+                    File storage_folder = new File("./store/");
+                    boolean folder_created = storage_folder.mkdir();
+                    if (folder_created) {
+                        createFile(command[1], Integer.parseInt(command[2]));
+                    }
+                }else{
+                    createFile(command[1], Integer.parseInt(command[2]));
+                }
+            }else{
+                Path fileName = Path.of("./store/" + stored_file_name);
+                try {
+                    Files.writeString(fileName, cmd);
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+                stored_files.put(stored_file_name, stored_file_size);
+                new Thread(new ControllerConnection(out_to_controller, stored_file_name)).start();
             }
+        }
+
+        private static void createFile(String fileName, Integer fileSize){
+            File file = new File("./store/" + fileName);
+            boolean result = false;
+            try {
+                result = file.createNewFile();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+            stored_file_name = fileName;
+            stored_file_size = fileSize;
         }
     }
 
@@ -99,7 +136,7 @@ public class Dstore {
                 System.err.println("error: " + e);
             }
         }
-        private static void sendSTORE_ACK(String filename, PrintWriter out){
+        private void sendSTORE_ACK(String filename, PrintWriter out) {
             out.println("STORE_ACK " + filename);
         }
     }
