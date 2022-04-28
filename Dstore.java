@@ -6,13 +6,17 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.concurrent.TimeUnit;
 
 public class Dstore {
 
-    private static HashMap<String, Integer> stored_files = new HashMap<>();
-    private static String stored_file_name;
-    private static int stored_file_size;
+    //private static HashMap<String, Integer> stored_files = new HashMap<>(); //Hash set of files
+    private static HashSet<File> stored_files = new HashSet<>();
+    private static File stored_file;
+   // private static String stored_file_name;
+    //private static int stored_file_size;
+    private static String file_folder;
 
     public static void main(String [] args) {
         Socket socket = null;
@@ -22,7 +26,7 @@ public class Dstore {
         int port = convertStringToInt(args[0]);
         int cport = convertStringToInt(args[1]);
         int timeout = convertStringToInt(args[2]);
-        String file_folder = args[3];
+        file_folder = args[3];
 
         try {
             //send msg to Controller
@@ -85,7 +89,7 @@ public class Dstore {
             String[] command = cmd.split(" ");
             if (command[0].equals("REMOVE")) {
                 String removed_file_name = command[1];
-                File file = new File("./store/" + removed_file_name);
+                File file = new File(file_folder + removed_file_name);
 
                 if(file.delete()){
                     new Thread(new ControllerConnection(out_to_controller, command[0], removed_file_name)).start();
@@ -93,8 +97,8 @@ public class Dstore {
 
             } else if (command[0].equals("STORE")) {
                 //store file content
-                if (!Files.isDirectory(Paths.get("./store/"))) {
-                    File storage_folder = new File("./store/");
+                if (!Files.isDirectory(Paths.get(file_folder))) {
+                    File storage_folder = new File(file_folder);
                     boolean folder_created = storage_folder.mkdir();
                     if (folder_created) {
                         createFile(command[1], Integer.parseInt(command[2]));
@@ -106,7 +110,7 @@ public class Dstore {
             } else if(command[0].equals("LOAD_DATA")){
                 //If Dstore does not have the requested file
                 try {
-                    BufferedReader in = new BufferedReader(new FileReader("./store/" + stored_file_name));
+                    BufferedReader in = new BufferedReader(new FileReader(file_folder + stored_file.getName()));
                     String str;
 
                     while ((str = in.readLine()) != null) {
@@ -117,27 +121,27 @@ public class Dstore {
                 } catch (IOException ignored) {
                 }
             }else{
-                Path fileName = Path.of("./store/" + stored_file_name);
+                Path fileName = Path.of(stored_file.getPath());
                 try {
                     Files.writeString(fileName, cmd);
                 } catch (IOException e) {
                     e.printStackTrace();
                 }
-                stored_files.put(stored_file_name, stored_file_size);
-                new Thread(new ControllerConnection(out_to_controller, command[0], stored_file_name)).start();
+                //stored_files.put(stored_file_name, stored_file_size);
+                stored_files.add(stored_file);
+                new Thread(new ControllerConnection(out_to_controller, command[0], stored_file.getName())).start();
             }
         }
 
         private static void createFile(String fileName, Integer fileSize){
-            File file = new File("./store/" + fileName);
+            File file = new File(file_folder + fileName);
             boolean result = false;
             try {
                 result = file.createNewFile();
             } catch (IOException e) {
                 e.printStackTrace();
             }
-            stored_file_name = fileName;
-            stored_file_size = fileSize;
+            stored_file = file;
         }
     }
 
