@@ -9,9 +9,8 @@ public class Controller {
     private static HashSet<Integer> dstores;
     private static PrintStream client_out; // should be hashset
     private static HashMap<String, Integer> stored_files = new HashMap<>();
-
-    private static Integer index_file_size;
-    private static String index_file_name;
+    private static HashMap<String, Integer> ACKs = new HashMap<>();
+    private static HashMap<PrintStream, Integer> load_to_client = new HashMap<>();
 
     public static void main(String [] args) {
         ServerSocket ss = null;
@@ -61,7 +60,13 @@ public class Controller {
                     if(line.contains("JOIN")) {
                         dstores.add(convertStringToInt(line.split(" ")[1]));
                     }else if(line.contains("STORE_ACK")){
-                        new Thread(new ClientConnection(client_out, "STORE_COMPLETE", ss)).start();
+                        String filename = line.split(" ")[1];
+                        int updated_counter = ACKs.get(filename)-1;
+                        ACKs.put(filename, updated_counter);
+                        if(ACKs.get(filename) == 0){
+                            new Thread(new ClientConnection(client_out, line, ss)).start();
+                        }
+
                     }else if(line.contains("REMOVE_ACK")){
                         //temp
                         stored_files.remove(line.split(" ")[1]);
@@ -102,21 +107,45 @@ public class Controller {
 
             }else if(command[0].equals("STORE")){
                 // updates index, “store in progress”
-                String dports = "";
-                for(Integer p : dstores){
-                    dports = dports + " " + p.toString();
+                if(Index.files_states.containsKey(command[1]) && Index.files_states.get(command[1]) == IndexState.STORE_IN_PROGRESS){
+                    out.println("ERROR_FILE_ALREADY_EXISTS");
+                }else{
+                    Index.files_states.put(command[1], IndexState.STORE_IN_PROGRESS);
+                    Index.stored_files.put(command[1], Integer.parseInt(command[2]));
+                    String dports = "";
+                    int i = 0;
+                    for(Integer p : dstores){
+                        dports = dports + " " + p.toString();
+                        i++;
+                    }
+                    ACKs.put(command[1], i);
+                    out.println("STORE_TO" + dports);
                 }
-                index_file_name = command[1];
-                index_file_size = Integer.parseInt(command[2]);
-                out.println("STORE_TO" + dports);
-            }else if(command[0].equals("STORE_COMPLETE")){
+            }else if(command[0].equals("STORE_ACK")){
                 //Once Controller received all acks updates index, “store complete”
-                stored_files.put(index_file_name, index_file_size);
+                stored_files.put(command[1], Index.stored_files.get(command[1]));
+                Index.files_states.put(command[1], IndexState.STORE_COMPLETE);
                 out.println("STORE_COMPLETE"); // to client
             }else if(command[0].equals("LOAD")){
                 Integer[] dports = dstores.toArray(new Integer[0]);
-                //dports[0];
-                out.println("LOAD_FROM " + dports[0]+ " " + stored_files.get(command[1]));
+
+                if(!Index.files_states.containsKey(command[1])){
+                    out.println("ERROR_FILE_DOES_NOT_EXIST");
+                }else if( Index.files_states.get(command[1]).equals(IndexState.STORE_IN_PROGRESS) ){
+                    out.println("ERROR_FILE_DOES_NOT_EXIST");
+                }else{
+                    load_to_client.put(out, 0);
+                    out.println("LOAD_FROM " + dports[0]+ " " + stored_files.get(command[1]));
+                }
+            }else if(command[0].equals("RELOAD")){
+                Integer[] dports = dstores.toArray(new Integer[0]);
+                int dport_index = load_to_client.get(out)+1;
+                if(dport_index >= dstores.size()){
+                    out.println("ERROR_LOAD");
+                }else {
+                    load_to_client.put(out, dport_index);
+                    out.println("LOAD_FROM " + dports[dport_index] + " " + stored_files.get(command[1]));
+                }
             }else if(command[0].equals("REMOVE")){
                 //Controller updates index, “remove in progress”
                 Integer[] dports = dstores.toArray(new Integer[0]);
