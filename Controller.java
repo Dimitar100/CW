@@ -69,8 +69,12 @@ public class Controller {
 
                     }else if(line.contains("REMOVE_ACK")){
                         //temp
-                        stored_files.remove(line.split(" ")[1]);
-                        new Thread(new ClientConnection(client_out, "REMOVE_COMPLETE", ss)).start();
+                        String filename = line.split(" ")[1];
+                        int updated_counter = ACKs.get(filename)-1;
+                        ACKs.put(filename, updated_counter);
+                        if(ACKs.get(filename) == 0){
+                            new Thread(new ClientConnection(client_out, line, ss)).start();
+                        }
                     }else{
                         if(dstores.size() < required_dstores){
                             out_to_client.println("ERROR_NOT_ENOUGH_DSTORES");
@@ -131,7 +135,8 @@ public class Controller {
 
                 if(!Index.files_states.containsKey(command[1])){
                     out.println("ERROR_FILE_DOES_NOT_EXIST");
-                }else if( Index.files_states.get(command[1]).equals(IndexState.STORE_IN_PROGRESS) ){
+                }else if( Index.files_states.get(command[1]).equals(IndexState.STORE_IN_PROGRESS)
+                        || Index.files_states.get(command[1]).equals(IndexState.REMOVE_IN_PROGRESS) ){
                     out.println("ERROR_FILE_DOES_NOT_EXIST");
                 }else{
                     load_to_client.put(out, 0);
@@ -148,22 +153,37 @@ public class Controller {
                 }
             }else if(command[0].equals("REMOVE")){
                 //Controller updates index, “remove in progress”
+
                 Integer[] dports = dstores.toArray(new Integer[0]);
                 InetAddress address = null;
                 Socket socket = null;
                 PrintWriter out_to_dport = null;
-                try {
-                    address = InetAddress.getLocalHost();
-                    for(int dport : dports) {
-                        socket = new Socket(address, dport);
-                        out_to_dport = new PrintWriter(socket.getOutputStream(), true);
-                        out_to_dport.println("REMOVE " + command[1]);
+                if(!Index.files_states.containsKey(command[1])){
+                    out.println("ERROR_FILE_DOES_NOT_EXIST");
+                }else if(Index.files_states.get(command[1]).equals(IndexState.STORE_IN_PROGRESS)
+                        || Index.files_states.get(command[1]).equals(IndexState.REMOVE_IN_PROGRESS)){
+                    out.println("ERROR_FILE_DOES_NOT_EXIST");
+                }else {
+                    Index.files_states.put(command[1], IndexState.REMOVE_IN_PROGRESS);
+
+                    try {
+                        int i = 0;
+                        address = InetAddress.getLocalHost();
+                        for (int dport : dports) {
+                            socket = new Socket(address, dport);
+                            out_to_dport = new PrintWriter(socket.getOutputStream(), true);
+                            out_to_dport.println("REMOVE " + command[1]);
+                            i++;
+                        }
+                        ACKs.put(command[1], i);
+                    } catch (IOException e) {
+                        e.printStackTrace();
                     }
-                } catch (IOException e) {
-                    e.printStackTrace();
                 }
-            }else if(command[0].equals("REMOVE_COMPLETE")){
+            }else if(command[0].equals("REMOVE_ACK")){
                 //update index
+                Index.files_states.put(command[1], IndexState.REMOVE_COMPLETE);
+                stored_files.remove(command[1]);
                 out.println("REMOVE_COMPLETE"); // to client
             }
         }
