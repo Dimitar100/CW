@@ -2,32 +2,57 @@ package mitko.code;
 
 import java.io.*;
 import java.net.*;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 
-public class Controller {
-    private static HashSet<Integer> dstores;
+public class Controller2 {
+
+    private static class Index {
+        static HashMap<String, Integer> stored_files = new HashMap<>();
+        static HashMap<String, IndexState> files_states = new HashMap<>();
+    }
+
+    private enum IndexState {
+        STORE_IN_PROGRESS,
+        STORE_COMPLETE,
+        REMOVE_IN_PROGRESS,
+        REMOVE_COMPLETE
+    }
+
+    private static HashSet<Integer> dstores_ports;
+    private static HashSet<Socket> dstores;
     private static PrintStream client_out; // should be hashset
     private static HashMap<String, Integer> stored_files = new HashMap<>();
     private static HashMap<String, Integer> ACKs = new HashMap<>();
     private static HashMap<PrintStream, Integer> load_to_client = new HashMap<>();
 
+    private static Integer R = null;
+    private static Integer timeout = null;
+    private static Integer rebalance_period = null;
+
+    private static ServerSocket ss = null;
+    private static HashSet<String> commands_from_client;
     public static void main(String [] args) {
-        ServerSocket ss = null;
-        dstores = new HashSet<Integer>();
+
+        dstores_ports = new HashSet<>();
+        dstores = new HashSet<>();
+        commands_from_client = new HashSet<>();
+        String[] commands = {"STORE", "LOAD", "RELOAD", "REMOVE", "LIST"};
+        commands_from_client.addAll(Arrays.asList(commands));
+
         try {
             int port = convertStringToInt(args[0]);
-            int R = convertStringToInt(args[1]);
-            int timeout = convertStringToInt(args[2]);
-            int rebalance_period = convertStringToInt(args[3]);
+            R = convertStringToInt(args[1]);
+            timeout = convertStringToInt(args[2]);
+            rebalance_period = convertStringToInt(args[3]);
 
             ss = new ServerSocket(port);
 
             while (true) {
                 Socket client = ss.accept(); // accept connections
-               // System.out.println(client.connect);
                 //Read on cport
-                new Thread(new ServiceThread(client, R, ss)).start();
+                new Thread(new ServiceThread(client)).start();
             }
         } catch(Exception e) { System.err.println("error: " + e);
         } finally {
@@ -39,151 +64,172 @@ public class Controller {
     static class ServiceThread implements Runnable {
         BufferedReader in;
         PrintStream out_to_client;
-        Socket client;
-        int required_dstores;
-        ServerSocket ss;
+        Socket socket;
 
-        ServiceThread(Socket client, int R, ServerSocket ss) throws IOException {
-            this.client = client;
-            out_to_client = new PrintStream(client.getOutputStream());
-            in = new BufferedReader(new InputStreamReader(client.getInputStream()));
-            required_dstores = R;
-            this.ss = ss;
+        ServiceThread(Socket socket) throws IOException {
+            this.socket = socket;
+            out_to_client = new PrintStream(socket.getOutputStream());
+            in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
         }
         public void run() {
             try {
                 String line;
                 while((line = in.readLine()) != null) {
 
-                    System.out.println(line);
 
-                    if(line.contains("JOIN")) {
-                        dstores.add(convertStringToInt(line.split(" ")[1]));
-                    }else if(line.contains("STORE_ACK")){
-                        String filename = line.split(" ")[1];
-                        int updated_counter = ACKs.get(filename)-1;
-                        ACKs.put(filename, updated_counter);
-                        if(ACKs.get(filename) == 0){
-                            new Thread(new ClientConnection(client_out, line, ss)).start();
-                        }
+                    String[] split_line = line.split(" ");
+                    String command = split_line[0];
 
-                    }else if(line.contains("REMOVE_ACK")){
-                        //temp
-                        String filename = line.split(" ")[1];
-                        int updated_counter = ACKs.get(filename)-1;
-                        ACKs.put(filename, updated_counter);
-                        if(ACKs.get(filename) == 0){
-                            new Thread(new ClientConnection(client_out, line, ss)).start();
+                    if(commands_from_client.contains(command)) {
+                        System.out.println("Client: "+line);
+                        if (dstores_ports.size() < R) {
+                            out_to_client.println("ERROR_NOT_ENOUGH_DSTORES");
+                        } else {
+                            //Connect with client;
+                            client_out = out_to_client; // save printstream to client
+                            new Thread(new ClientConnection(out_to_client, split_line, ss)).start();
+                            //
                         }
                     }else{
-                        if(dstores.size() < required_dstores){
-                            out_to_client.println("ERROR_NOT_ENOUGH_DSTORES");
-                        }else{
-                            //Connect with client;
-                            client_out =out_to_client; // save printstream to client
-                            new Thread(new ClientConnection(out_to_client, line, ss)).start();
-                            //
+                        //ss.setSoTimeout(5000); // set timer
+                        System.out.println("Dstore: "+line);
+                        if(command.equals("JOIN")) {
+                            dstores_ports.add(convertStringToInt(split_line[1]));
+                            dstores.add(socket);
+                            //rebalance
+                        }else {
+                            String filename = split_line[1];
+                            if(line.contains("STORE_ACK")){
+                                int updated_counter = ACKs.get(filename)-1;
+                                ACKs.put(filename, updated_counter);
+                                if(ACKs.get(filename) == 0){
+                                    new Thread(new ClientConnection(client_out, split_line, ss)).start();
+                                }
+                            }else if(line.contains("REMOVE_ACK")){
+                                int updated_counter = ACKs.get(filename)-1;
+                                ACKs.put(filename, updated_counter);
+                                if(ACKs.get(filename) == 0){
+                                    new Thread(new ClientConnection(client_out, split_line, ss)).start();
+                                }
+                            }
                         }
                     }
                 }
-                client.close();
+                socket.close();
             } catch(Exception e) { System.err.println("error: " + e); }
         }
     }
 
     static class ClientConnection implements Runnable {
         PrintStream out;
-        String cmd;
+        String[] split_line;
         ServerSocket ss;
-        ClientConnection(PrintStream out, String s, ServerSocket ss) {
+        String command;
+        String filename;
+        ClientConnection(PrintStream out, String[] split_line, ServerSocket ss) {
             this.out=out;
-            cmd = s;
+            this.split_line = split_line;
             this.ss = ss;
+            this.command = split_line[0];
+            if(split_line.length > 1){
+                filename = split_line[1];
+            }
         }
         public void run() {
-            String command[] = cmd.split(" ");
-            if(command[0].equals("LIST")){
-                String files_names = "LIST";
-                for(String s : stored_files.keySet()){
-                    files_names = files_names + " " + s;
-                }
-                out.println(files_names);
 
-            }else if(command[0].equals("STORE")){
-                // updates index, “store in progress”
-                if(Index.files_states.containsKey(command[1]) && Index.files_states.get(command[1]) == IndexState.STORE_IN_PROGRESS){
-                    out.println("ERROR_FILE_ALREADY_EXISTS");
-                }else{
-                    Index.files_states.put(command[1], IndexState.STORE_IN_PROGRESS);
-                    Index.stored_files.put(command[1], Integer.parseInt(command[2]));
-                    String dports = "";
-                    int i = 0;
-                    for(Integer p : dstores){
-                        dports = dports + " " + p.toString();
-                        i++;
+            switch (command) {
+                case "LIST":
+                    StringBuilder files_names = new StringBuilder("LIST");
+                    for (String s : stored_files.keySet()) {
+                        files_names.append(" ").append(s);
                     }
-                    ACKs.put(command[1], i);
-                    out.println("STORE_TO" + dports);
-                }
-            }else if(command[0].equals("STORE_ACK")){
-                //Once Controller received all acks updates index, “store complete”
-                stored_files.put(command[1], Index.stored_files.get(command[1]));
-                Index.files_states.put(command[1], IndexState.STORE_COMPLETE);
-                out.println("STORE_COMPLETE"); // to client
-            }else if(command[0].equals("LOAD")){
-                Integer[] dports = dstores.toArray(new Integer[0]);
+                    out.println(files_names);
 
-                if(!Index.files_states.containsKey(command[1])){
-                    out.println("ERROR_FILE_DOES_NOT_EXIST");
-                }else if( Index.files_states.get(command[1]).equals(IndexState.STORE_IN_PROGRESS)
-                        || Index.files_states.get(command[1]).equals(IndexState.REMOVE_IN_PROGRESS) ){
-                    out.println("ERROR_FILE_DOES_NOT_EXIST");
-                }else{
-                    load_to_client.put(out, 0);
-                    out.println("LOAD_FROM " + dports[0]+ " " + stored_files.get(command[1]));
-                }
-            }else if(command[0].equals("RELOAD")){
-                Integer[] dports = dstores.toArray(new Integer[0]);
-                int dport_index = load_to_client.get(out)+1;
-                if(dport_index >= dstores.size()){
-                    out.println("ERROR_LOAD");
-                }else {
-                    load_to_client.put(out, dport_index);
-                    out.println("LOAD_FROM " + dports[dport_index] + " " + stored_files.get(command[1]));
-                }
-            }else if(command[0].equals("REMOVE")){
-                //Controller updates index, “remove in progress”
-
-                Integer[] dports = dstores.toArray(new Integer[0]);
-                InetAddress address = null;
-                Socket socket = null;
-                PrintWriter out_to_dport = null;
-                if(!Index.files_states.containsKey(command[1])){
-                    out.println("ERROR_FILE_DOES_NOT_EXIST");
-                }else if(Index.files_states.get(command[1]).equals(IndexState.STORE_IN_PROGRESS)
-                        || Index.files_states.get(command[1]).equals(IndexState.REMOVE_IN_PROGRESS)){
-                    out.println("ERROR_FILE_DOES_NOT_EXIST");
-                }else {
-                    Index.files_states.put(command[1], IndexState.REMOVE_IN_PROGRESS);
-
-                    try {
+                    break;
+                case "STORE":
+                    if (Index.files_states.containsKey(filename) && Index.files_states.get(filename) == IndexState.STORE_IN_PROGRESS) {
+                        out.println("ERROR_FILE_ALREADY_EXISTS");
+                    } else {
+                        Index.files_states.put(filename, IndexState.STORE_IN_PROGRESS);
+                        Index.stored_files.put(filename, Integer.parseInt(split_line[2]));
+                        StringBuilder dports = new StringBuilder();
                         int i = 0;
-                        address = InetAddress.getLocalHost();
-                        for (int dport : dports) {
-                            socket = new Socket(address, dport);
-                            out_to_dport = new PrintWriter(socket.getOutputStream(), true);
-                            out_to_dport.println("REMOVE " + command[1]);
+                        for (Integer p : dstores_ports) {
+                            dports.append(" ").append(p.toString());
                             i++;
                         }
-                        ACKs.put(command[1], i);
-                    } catch (IOException e) {
-                        e.printStackTrace();
+                        ACKs.put(filename, i);
+                        out.println("STORE_TO" + dports);
+                        //start thread with all dstores and wait
+                        for(Socket dstore : dstores){
+                            
+                        }
                     }
+                    break;
+                case "LOAD": {
+                    Integer[] dports = dstores_ports.toArray(new Integer[0]);
+
+                    if (!Index.files_states.containsKey(filename)) {
+                        out.println("ERROR_FILE_DOES_NOT_EXIST");
+                    } else if (Index.files_states.get(filename).equals(IndexState.STORE_IN_PROGRESS)
+                            || Index.files_states.get(filename).equals(IndexState.REMOVE_IN_PROGRESS)) {
+                        out.println("ERROR_FILE_DOES_NOT_EXIST");
+                    } else {
+                        load_to_client.put(out, 0);
+                        out.println("LOAD_FROM " + dports[0] + " " + stored_files.get(filename));
+                    }
+                    break;
                 }
-            }else if(command[0].equals("REMOVE_ACK")){
-                //update index
-                Index.files_states.put(command[1], IndexState.REMOVE_COMPLETE);
-                stored_files.remove(command[1]);
+                case "RELOAD": {
+                    Integer[] dports = dstores_ports.toArray(new Integer[0]);
+                    int dport_index = load_to_client.get(out) + 1;
+                    if (dport_index >= dstores_ports.size()) {
+                        out.println("ERROR_LOAD");
+                    } else {
+                        load_to_client.put(out, dport_index);
+                        out.println("LOAD_FROM " + dports[dport_index] + " " + stored_files.get(filename));
+                    }
+                    break;
+                }
+                case "REMOVE": {
+                    Integer[] dports = dstores_ports.toArray(new Integer[0]);
+                    InetAddress address;
+                    Socket socket;
+                    PrintWriter out_to_dport;
+                    if (!Index.files_states.containsKey(filename)) {
+                        out.println("ERROR_FILE_DOES_NOT_EXIST");
+                    } else if (Index.files_states.get(filename).equals(IndexState.STORE_IN_PROGRESS)
+                            || Index.files_states.get(filename).equals(IndexState.REMOVE_IN_PROGRESS)) {
+                        out.println("ERROR_FILE_DOES_NOT_EXIST");
+                    } else {
+                        Index.files_states.put(filename, IndexState.REMOVE_IN_PROGRESS);
+
+                        try {
+                            int i = 0;
+                            address = InetAddress.getLocalHost();
+                            for (int dport : dports) {
+                                socket = new Socket(address, dport);
+                                out_to_dport = new PrintWriter(socket.getOutputStream(), true);
+                                out_to_dport.println("REMOVE " + filename);
+                                i++;
+                            }
+                            ACKs.put(filename, i);
+                        } catch (IOException e) {
+                            e.printStackTrace();
+                        }
+                    }
+                    break;
+                }
+            }
+
+            if(command.equals("STORE_ACK")){
+                //Once Controller received all acks updates index, “store complete”
+                stored_files.put(filename, Index.stored_files.get(filename));
+                Index.files_states.put(filename, IndexState.STORE_COMPLETE);
+                out.println("STORE_COMPLETE"); // to client
+            }else if(command.equals("REMOVE_ACK")){
+                Index.files_states.put(filename, IndexState.REMOVE_COMPLETE);
+                stored_files.remove(filename);
                 out.println("REMOVE_COMPLETE"); // to client
             }
         }
