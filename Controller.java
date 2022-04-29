@@ -5,6 +5,7 @@ import java.net.*;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.concurrent.CountDownLatch;
 
 public class Controller2 {
 
@@ -21,10 +22,8 @@ public class Controller2 {
     }
 
     private static HashSet<Integer> dstores_ports;
-    private static HashSet<Socket> dstores;
-    private static PrintStream client_out; // should be hashset
+    private static HashMap<ServiceThread, String> dstores_connections;
     private static HashMap<String, Integer> stored_files = new HashMap<>();
-    private static HashMap<String, Integer> ACKs = new HashMap<>();
     private static HashMap<PrintStream, Integer> load_to_client = new HashMap<>();
 
     private static Integer R = null;
@@ -33,10 +32,11 @@ public class Controller2 {
 
     private static ServerSocket ss = null;
     private static HashSet<String> commands_from_client;
+
     public static void main(String [] args) {
 
         dstores_ports = new HashSet<>();
-        dstores = new HashSet<>();
+        dstores_connections = new HashMap<>();
         commands_from_client = new HashSet<>();
         String[] commands = {"STORE", "LOAD", "RELOAD", "REMOVE", "LIST"};
         commands_from_client.addAll(Arrays.asList(commands));
@@ -86,31 +86,18 @@ public class Controller2 {
                             out_to_client.println("ERROR_NOT_ENOUGH_DSTORES");
                         } else {
                             //Connect with client;
-                            client_out = out_to_client; // save printstream to client
+                            //client_out = out_to_client; // save printstream to client
                             new Thread(new ClientConnection(out_to_client, split_line, ss)).start();
-                            //
                         }
                     }else{
-                        //ss.setSoTimeout(5000); // set timer
                         System.out.println("Dstore: "+line);
                         if(command.equals("JOIN")) {
                             dstores_ports.add(convertStringToInt(split_line[1]));
-                            dstores.add(socket);
+                            dstores_connections.put(this, "JOIN");
                             //rebalance
                         }else {
-                            String filename = split_line[1];
-                            if(line.contains("STORE_ACK")){
-                                int updated_counter = ACKs.get(filename)-1;
-                                ACKs.put(filename, updated_counter);
-                                if(ACKs.get(filename) == 0){
-                                    new Thread(new ClientConnection(client_out, split_line, ss)).start();
-                                }
-                            }else if(line.contains("REMOVE_ACK")){
-                                int updated_counter = ACKs.get(filename)-1;
-                                ACKs.put(filename, updated_counter);
-                                if(ACKs.get(filename) == 0){
-                                    new Thread(new ClientConnection(client_out, split_line, ss)).start();
-                                }
+                            if (command.equals("STORE_ACK") || command.equals("REMOVE_ACK")){
+                                dstores_connections.put(this, line);
                             }
                         }
                     }
@@ -158,11 +145,22 @@ public class Controller2 {
                             dports.append(" ").append(p.toString());
                             i++;
                         }
-                        ACKs.put(filename, i);
+                        //ACKs.put(filename, i);
                         out.println("STORE_TO" + dports);
                         //start thread with all dstores and wait
-                        for(Socket dstore : dstores){
-                            
+
+                        CountDownLatch latch = new CountDownLatch(i);
+                        for(ServiceThread dstore_connection : dstores_connections.keySet()) {
+                            new Thread(new ACK_Receiver(dstore_connection, "STORE_ACK "+filename, latch)).start();
+                        }
+
+                        try {
+                            latch.await();
+                            stored_files.put(filename, Index.stored_files.get(filename));
+                            Index.files_states.put(filename, IndexState.STORE_COMPLETE);
+                            out.println("STORE_COMPLETE"); // to client
+                        } catch (InterruptedException e) {
+                            e.printStackTrace();
                         }
                     }
                     break;
@@ -213,7 +211,20 @@ public class Controller2 {
                                 out_to_dport.println("REMOVE " + filename);
                                 i++;
                             }
-                            ACKs.put(filename, i);
+                            //Can be function
+                            CountDownLatch latch = new CountDownLatch(i);
+                            for(ServiceThread dstore_connection : dstores_connections.keySet()) {
+                                new Thread(new ACK_Receiver(dstore_connection, "REMOVE_ACK "+filename, latch)).start();
+                            }
+                            try {
+                                latch.await();
+                                Index.files_states.put(filename, IndexState.REMOVE_COMPLETE);
+                                stored_files.remove(filename);
+                                out.println("REMOVE_COMPLETE"); // to client
+                            } catch (InterruptedException e) {
+                                e.printStackTrace();
+                            }
+                            //
                         } catch (IOException e) {
                             e.printStackTrace();
                         }
@@ -221,16 +232,28 @@ public class Controller2 {
                     break;
                 }
             }
+        }
+    }
 
-            if(command.equals("STORE_ACK")){
-                //Once Controller received all acks updates index, “store complete”
-                stored_files.put(filename, Index.stored_files.get(filename));
-                Index.files_states.put(filename, IndexState.STORE_COMPLETE);
-                out.println("STORE_COMPLETE"); // to client
-            }else if(command.equals("REMOVE_ACK")){
-                Index.files_states.put(filename, IndexState.REMOVE_COMPLETE);
-                stored_files.remove(filename);
-                out.println("REMOVE_COMPLETE"); // to client
+    static class ACK_Receiver implements Runnable {
+        ServiceThread dstore_connection;
+        String expected_line;
+        CountDownLatch latch;
+
+        ACK_Receiver(ServiceThread dstore_connection, String expected_line, CountDownLatch latch){
+            this.dstore_connection = dstore_connection;
+            this.expected_line = expected_line;
+            this.latch = latch;
+        }
+        public void run() {
+            String line;
+            while(true) {
+                line = dstores_connections.get(dstore_connection);
+                if(line.equals(expected_line)){
+                    dstores_connections.put(dstore_connection, "");
+                    latch.countDown();
+                    break;
+                }
             }
         }
     }
