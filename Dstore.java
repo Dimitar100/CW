@@ -5,17 +5,12 @@ import java.net.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.HashMap;
 import java.util.HashSet;
-import java.util.concurrent.TimeUnit;
 
 public class Dstore {
 
-    //private static HashMap<String, Integer> stored_files = new HashMap<>(); //Hash set of files
     private static HashSet<File> stored_files = new HashSet<>();
     private static File stored_file;
-   // private static String stored_file_name;
-    //private static int stored_file_size;
     private static String file_folder;
 
     public static void main(String [] args) {
@@ -56,7 +51,6 @@ public class Dstore {
                     new Thread(new ClientConnection(clientOutputStream, out_to_client, out_to_controller, line)).start();
                 }
                 client.close();
-
             }
 
 
@@ -72,7 +66,7 @@ public class Dstore {
         PrintStream out_to_client;
         PrintWriter out_to_controller;
         String cmd;
-        ClientConnection(OutputStream outputStream, PrintStream out_to_client,  PrintWriter out_to_controller, String cmd) {
+        ClientConnection( OutputStream outputStream, PrintStream out_to_client,  PrintWriter out_to_controller, String cmd) {
             this.outputStream = outputStream;
             this.out_to_client = out_to_client;
             this.out_to_controller = out_to_controller;
@@ -92,6 +86,7 @@ public class Dstore {
                 File file = new File(file_folder + removed_file_name);
 
                 if(file.delete()){
+                    stored_files.remove(file);
                     new Thread(new ControllerConnection(out_to_controller, command[0], removed_file_name)).start();
                 }
 
@@ -121,9 +116,11 @@ public class Dstore {
                 } catch (IOException ignored) {
                 }
             }else{
+                //store and send ACK to controler;
                 Path fileName = Path.of(stored_file.getPath());
                 try {
                     Files.writeString(fileName, cmd);
+                   // Dont write string write data
                 } catch (IOException e) {
                     e.printStackTrace();
                 }
