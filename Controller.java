@@ -76,7 +76,6 @@ public class Controller2 {
                 String line;
                 while((line = in.readLine()) != null) {
 
-
                     String[] split_line = line.split(" ");
                     String command = split_line[0];
 
@@ -131,7 +130,6 @@ public class Controller2 {
                         files_names.append(" ").append(s);
                     }
                     out.println(files_names);
-
                     break;
                 case "STORE":
                     if (Index.files_states.containsKey(filename) && Index.files_states.get(filename) == IndexState.STORE_IN_PROGRESS) {
