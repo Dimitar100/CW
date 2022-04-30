@@ -14,8 +14,8 @@ public class Dstore {
     private static String file_folder;
 
     public static void main(String [] args) {
-        Socket socket = null;
-        ServerSocket ss;
+        Socket socket_controller;
+        ServerSocket ss = null;
         PrintWriter out_to_controller;
 
         int port = convertStringToInt(args[0]);
@@ -24,40 +24,21 @@ public class Dstore {
         file_folder = args[3];
 
         try {
-            //send msg to Controller
             InetAddress address = InetAddress.getLocalHost();
-            socket = new Socket(address, cport);
-            out_to_controller = new PrintWriter(socket.getOutputStream(), true);
+            socket_controller = new Socket(address, cport);
+            out_to_controller = new PrintWriter(socket_controller.getOutputStream(), true);
             out_to_controller.println("JOIN " + port);
-            ////
-            //listen on port
+            
             ss = new ServerSocket(port);
-            BufferedReader in = null;
-            PrintStream out_to_client = null;
-            OutputStream clientOutputStream = null;
 
             while(true) {
-                Socket client = ss.accept();
-                try {
-                    in = new BufferedReader(new InputStreamReader(client.getInputStream()));
-                    out_to_client = new PrintStream(client.getOutputStream());
-                    clientOutputStream = client.getOutputStream();
-                } catch(Exception e) { System.err.println("error: " + e); }
-
-                String line;
-                while((line = in.readLine()) != null) {
-                    System.out.println(line); //print the received command
-
-                    new Thread(new ClientConnection(clientOutputStream, out_to_client, out_to_controller, line)).start();
-                }
-                client.close();
+                Socket socket = ss.accept();
+                new Thread(new ClientConnection(socket, out_to_controller)).start();
             }
-
-
         } catch(Exception e) { System.err.println("error: " + e);
         } finally {
-            if (socket != null)
-                try { socket.close(); } catch (IOException e) { System.err.println("error: " + e); }
+            if (ss != null)
+                try { ss.close(); } catch (IOException e) { System.err.println("error: " + e); }
         }
     }
 
@@ -65,72 +46,90 @@ public class Dstore {
         OutputStream outputStream;
         PrintStream out_to_client;
         PrintWriter out_to_controller;
-        String cmd;
-        ClientConnection( OutputStream outputStream, PrintStream out_to_client,  PrintWriter out_to_controller, String cmd) {
-            this.outputStream = outputStream;
-            this.out_to_client = out_to_client;
+        BufferedReader in;
+        Socket socket;
+
+        ClientConnection(Socket socket, PrintWriter out_to_controller) {
+            this.socket = socket;
             this.out_to_controller = out_to_controller;
-            this.cmd = cmd;
+
+            try {
+                in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+                out_to_client = new PrintStream(socket.getOutputStream());
+                outputStream = socket.getOutputStream();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+
         }
         public void run() {
             try {
-                readCommands(cmd, outputStream, out_to_client, out_to_controller);
+
+                String line;
+                while((line = in.readLine()) != null) {
+                    System.out.println(line); //print the received command
+                    readCommands(line, outputStream, out_to_client, out_to_controller);
+                }
+                socket.close();
             } catch(Exception e) {
                 System.err.println("error: " + e);
             }
         }
         private static void readCommands(String cmd, OutputStream outputStream, PrintStream out, PrintWriter out_to_controller) {
             String[] command = cmd.split(" ");
-            if (command[0].equals("REMOVE")) {
-                String removed_file_name = command[1];
-                File file = new File(file_folder + removed_file_name);
+            switch (command[0]) {
+                case "REMOVE":
+                    String removed_file_name = command[1];
+                    File file = new File(file_folder + removed_file_name);
 
-                if(file.delete()){
-                    stored_files.remove(file);
-                    new Thread(new ControllerConnection(out_to_controller, command[0], removed_file_name)).start();
-                }
-
-            } else if (command[0].equals("STORE")) {
-                //store file content
-                if (!Files.isDirectory(Paths.get(file_folder))) {
-                    File storage_folder = new File(file_folder);
-                    boolean folder_created = storage_folder.mkdir();
-                    if (folder_created) {
-                        createFile(command[1], Integer.parseInt(command[2]));
+                    if (file.delete()) {
+                        stored_files.remove(file);
+                        new Thread(new ControllerConnection(out_to_controller, command[0], removed_file_name)).start();
                     }
-                } else {
-                    createFile(command[1], Integer.parseInt(command[2]));
-                }
-                out.println("ACK");
-            } else if(command[0].equals("LOAD_DATA")){
-                //If Dstore does not have the requested file
-                try {
-                    BufferedReader in = new BufferedReader(new FileReader(file_folder + stored_file.getName()));
-                    String str;
 
-                    while ((str = in.readLine()) != null) {
-                        //System.out.println(str);
-                        outputStream.write(str.getBytes());
+                    break;
+                case "STORE":
+                    if (!Files.isDirectory(Paths.get(file_folder))) {
+                        File storage_folder = new File(file_folder);
+                        boolean folder_created = storage_folder.mkdir();
+                        if (folder_created) {
+                            createFile(command[1]);
+                        }
+                    } else {
+                        createFile(command[1]);
                     }
-                    in.close();
-                } catch (IOException ignored) {
-                }
-            }else{
-                //store and send ACK to controler;
-                Path fileName = Path.of(stored_file.getPath());
-                try {
-                    Files.writeString(fileName, cmd);
-                   // Dont write string write data
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
-                //stored_files.put(stored_file_name, stored_file_size);
-                stored_files.add(stored_file);
-                new Thread(new ControllerConnection(out_to_controller, command[0], stored_file.getName())).start();
+                    out.println("ACK");
+                    break;
+                case "LOAD_DATA":
+                    //If Dstore does not have the requested file
+                    try {
+                        BufferedReader in = new BufferedReader(new FileReader(file_folder + stored_file.getName()));
+                        String str;
+
+                        while ((str = in.readLine()) != null) {
+                            //System.out.println(str);
+                            outputStream.write(str.getBytes());
+                        }
+                        in.close();
+                    } catch (IOException ignored) {
+                    }
+                    break;
+                default:
+                    //store and send ACK to controler;
+                    Path fileName = Path.of(stored_file.getPath());
+                    try {
+                        Files.writeString(fileName, cmd);
+                        // Dont write string write data
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                    stored_files.add(stored_file);
+                    new Thread(new ControllerConnection(out_to_controller, command[0], stored_file.getName())).start();
+                    break;
             }
         }
 
-        private static void createFile(String fileName, Integer fileSize){
+        private static void createFile(String fileName){
             File file = new File(file_folder + fileName);
             boolean result = false;
             try {
@@ -138,7 +137,9 @@ public class Dstore {
             } catch (IOException e) {
                 e.printStackTrace();
             }
-            stored_file = file;
+            if(result){
+                stored_file = file;
+            }
         }
     }
 
