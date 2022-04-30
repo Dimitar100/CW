@@ -1,3 +1,5 @@
+package mitko.code;
+
 import java.io.*;
 import java.net.*;
 import java.util.Arrays;
@@ -133,6 +135,9 @@ public class Controller {
                     } else {
                         Index.files_states.put(filename, IndexState.STORE_IN_PROGRESS);
                         Index.stored_files.put(filename, Integer.parseInt(split_line[2]));
+                        ////////
+                        stored_files.put(filename, Integer.parseInt(split_line[2]));
+                        ///////
                         StringBuilder dports = new StringBuilder();
                         int i = 0;
                         for (Integer p : dstores_ports) {
@@ -150,7 +155,7 @@ public class Controller {
 
                         try {
                             latch.await();
-                            stored_files.put(filename, Index.stored_files.get(filename));
+                           // stored_files.put(filename, Index.stored_files.get(filename));
                             Index.files_states.put(filename, IndexState.STORE_COMPLETE);
                             out.println("STORE_COMPLETE"); // to client
                         } catch (InterruptedException e) {
@@ -161,13 +166,15 @@ public class Controller {
                 case "LOAD": {
                     Integer[] dports = dstores_ports.toArray(new Integer[0]);
 
-                    if (!Index.files_states.containsKey(filename)) {
+                    if (!Index.files_states.containsKey(filename )|| !stored_files.containsKey(filename)) {
                         out.println("ERROR_FILE_DOES_NOT_EXIST");
                     } else if (Index.files_states.get(filename).equals(IndexState.STORE_IN_PROGRESS)
-                            || Index.files_states.get(filename).equals(IndexState.REMOVE_IN_PROGRESS)) {
+                            || Index.files_states.get(filename).equals(IndexState.REMOVE_IN_PROGRESS)
+                            || Index.files_states.get(filename).equals(IndexState.REMOVE_COMPLETE)){
                         out.println("ERROR_FILE_DOES_NOT_EXIST");
                     } else {
                         load_to_client.put(out, 0);
+                       // System.out.println("LOAD_FROM_TEST " + dports[0] + " " + stored_files.get(filename));
                         out.println("LOAD_FROM " + dports[0] + " " + stored_files.get(filename));
                     }
                     break;
