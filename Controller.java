@@ -7,7 +7,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.concurrent.CountDownLatch;
 
-public class Controller2 {
+public class Controller {
 
     private static class Index {
         static HashMap<String, Integer> stored_files = new HashMap<>();
