@@ -44,7 +44,7 @@ public class Dstore {
 
             while(true) {
                 Socket socket = ss.accept();
-                new Thread(new ServiceThread(socket, out_to_controller)).start();
+                new Thread(new ServiceThreadDstore(socket, out_to_controller)).start();
             }
         } catch(Exception e) { System.err.println("error: " + e);
         } finally {
@@ -53,14 +53,14 @@ public class Dstore {
         }
     }
 
-    static class ServiceThread implements Runnable {
+    static class ServiceThreadDstore implements Runnable {
         OutputStream outputStream;
         PrintStream out_to_client;
         PrintWriter out_to_controller;
         BufferedReader in;
         Socket socket;
 
-        ServiceThread(Socket socket, PrintWriter out_to_controller) {
+        ServiceThreadDstore(Socket socket, PrintWriter out_to_controller) {
             this.socket = socket;
             this.out_to_controller = out_to_controller;
             try {
