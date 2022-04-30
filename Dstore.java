@@ -1,7 +1,6 @@
 import java.io.*;
 import java.net.*;
 import java.nio.file.Files;
-import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.HashSet;
 import java.util.Stack;
@@ -124,7 +123,6 @@ public class Dstore {
                 default:
                     //store and send ACK to controler;
                     File file_to_write = files_to_be_stored.firstElement();
-                    Path fileName = Path.of(file_to_write.getPath());
                     try {
                         FileWriter myWriter = new FileWriter(file_to_write.getPath());
                         myWriter.write(cmd);
