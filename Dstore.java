@@ -6,11 +6,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.HashSet;
+import java.util.Stack;
 
 public class Dstore {
 
     private static HashSet<File> stored_files = new HashSet<>();
-    private static File stored_file;
+    private static Stack<File> files_to_be_stored = new Stack<>();
     private static String file_folder;
 
     public static void main(String [] args) {
@@ -31,7 +32,7 @@ public class Dstore {
             assert filesList != null;
             for(File file : filesList) {
                 if(file.isFile()) {
-                    boolean file_deleted = file.delete();
+                    file.delete();
                 }
             }
         }
@@ -45,7 +46,7 @@ public class Dstore {
 
             while(true) {
                 Socket socket = ss.accept();
-                new Thread(new ClientConnection(socket, out_to_controller)).start();
+                new Thread(new ServiceThread(socket, out_to_controller)).start();
             }
         } catch(Exception e) { System.err.println("error: " + e);
         } finally {
@@ -54,14 +55,14 @@ public class Dstore {
         }
     }
 
-    static class ClientConnection implements Runnable {
+    static class ServiceThread implements Runnable {
         OutputStream outputStream;
         PrintStream out_to_client;
         PrintWriter out_to_controller;
         BufferedReader in;
         Socket socket;
 
-        ClientConnection(Socket socket, PrintWriter out_to_controller) {
+        ServiceThread(Socket socket, PrintWriter out_to_controller) {
             this.socket = socket;
             this.out_to_controller = out_to_controller;
             try {
@@ -91,14 +92,10 @@ public class Dstore {
                 case "REMOVE":
                     String removed_file_name = command[1];
                     File file = new File(file_folder + removed_file_name);
-                    //System.out.println("OK");
                     if(file.exists()){
-                      //  System.out.println("OK1");
-                        if (file.delete()) {
-                        //    System.out.println("OK2");
-                            stored_files.remove(file);
-                            new Thread(new ControllerConnection(out_to_controller, command[0], removed_file_name)).start();
-                        }
+                        file.delete();
+                        stored_files.remove(file);
+                        new Thread(new ControllerConnection(out_to_controller, command[0], removed_file_name)).start();
                     }else{
                         new Thread(new ControllerConnection(out_to_controller, "ERROR_FILE_DOES_NOT_EXIST", removed_file_name)).start();
                     }
@@ -108,40 +105,37 @@ public class Dstore {
                     File file_to_store = new File(file_folder + command[1]);
                     boolean result;
                     try {
-                        result = file_to_store.createNewFile();
-                        if(result){
-                            stored_file = file_to_store;//ne mi haresva
-                            out.println("ACK");
+                        if(file_to_store.exists()){
+                            files_to_be_stored.add(file_to_store);
+                            new Thread(new ClientConnection(out, command[0])).start();
+                        }else{
+                            result = file_to_store.createNewFile();
+                            if(result){
+                                //stored_file = file_to_store;//ne mi haresva
+                                files_to_be_stored.add(file_to_store);
+                                new Thread(new ClientConnection(out, command[0])).start();
+                            }
                         }
                     } catch (IOException e) {
                         e.printStackTrace();
                     }
                     break;
                 case "LOAD_DATA":
-                    //If Dstore does not have the requested file
-                    try {
-                        BufferedReader in = new BufferedReader(new FileReader(file_folder + stored_file.getName()));
-                        String str;
-
-                        while ((str = in.readLine()) != null) {
-                            //System.out.println(str);
-                            outputStream.write(str.getBytes());
-                        }
-                        in.close();
-                    } catch (IOException ignored) {
-                    }
+                    new Thread(new ClientConnection(outputStream, command[0], command[1])).start();
                     break;
                 default:
                     //store and send ACK to controler;
-                    Path fileName = Path.of(stored_file.getPath());
+                    File file_to_write = files_to_be_stored.firstElement();
+                    Path fileName = Path.of(file_to_write.getPath());
                     try {
                         Files.writeString(fileName, cmd);
                         // Dont write string write data
                     } catch (IOException e) {
                         e.printStackTrace();
                     }
-                    stored_files.add(stored_file);
-                    new Thread(new ControllerConnection(out_to_controller, command[0], stored_file.getName())).start();
+                    stored_files.add(file_to_write);
+                    files_to_be_stored.remove(files_to_be_stored.firstElement());
+                    new Thread(new ControllerConnection(out_to_controller, command[0], file_to_write.getName())).start();
                     break;
             }
         }
@@ -159,21 +153,48 @@ public class Dstore {
         public void run() {
             try {
                 if(command.equals("REMOVE")){
-                    sendREMOVE_ACK(fileName, out);
+                    out.println("REMOVE_ACK " + fileName);
                 }else if(command.equals("ERROR_FILE_DOES_NOT_EXIST")){
                     out.println(command);
                 }else{
-                    sendSTORE_ACK(fileName, out);
+                    out.println("STORE_ACK " + fileName);
                 }
             } catch(Exception e) {
                 System.err.println("error: " + e);
             }
         }
-        private void sendSTORE_ACK(String filename, PrintWriter out) {
-            out.println("STORE_ACK " + filename);
+    }
+
+    static class ClientConnection implements Runnable {
+        PrintStream out;
+        String command;
+        OutputStream outputStream;
+        String filename = null;
+        ClientConnection(PrintStream out, String command) {
+            this.command = command;
+            this.out = out;
         }
-        private void sendREMOVE_ACK(String filename, PrintWriter out) {
-            out.println("REMOVE_ACK " + filename);
+        ClientConnection(OutputStream outputStream, String command, String filename) {
+            this.command = command;
+            this.outputStream = outputStream;
+            this.filename = filename;
+        }
+        public void run() {
+            try {
+                if(command.equals("STORE")){
+                    out.println("ACK");
+                }else if(command.equals("LOAD_DATA")){
+                   // outputStream.write(command);
+                    BufferedReader in = new BufferedReader(new FileReader(file_folder + filename));
+                    String str;
+                    while ((str = in.readLine()) != null) {
+                        outputStream.write(str.getBytes());// new thread
+                    }
+                    in.close();
+                }
+            } catch(Exception e) {
+                System.err.println("error: " + e);
+            }
         }
     }
 
