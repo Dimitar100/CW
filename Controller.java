@@ -84,8 +84,6 @@ public class Controller2 {
                         if (dstores_ports.size() < R) {
                             out_to_client.println("ERROR_NOT_ENOUGH_DSTORES");
                         } else {
-                            //Connect with client;
-                            //client_out = out_to_client; // save printstream to client
                             new Thread(new ClientConnection(out_to_client, split_line, ss)).start();
                         }
                     }else{
@@ -195,7 +193,8 @@ public class Controller2 {
                     if (!Index.files_states.containsKey(filename)) {
                         out.println("ERROR_FILE_DOES_NOT_EXIST");
                     } else if (Index.files_states.get(filename).equals(IndexState.STORE_IN_PROGRESS)
-                            || Index.files_states.get(filename).equals(IndexState.REMOVE_IN_PROGRESS)) {
+                            || Index.files_states.get(filename).equals(IndexState.REMOVE_IN_PROGRESS)
+                            || Index.files_states.get(filename).equals(IndexState.REMOVE_COMPLETE)) {
                         out.println("ERROR_FILE_DOES_NOT_EXIST");
                     } else {
                         Index.files_states.put(filename, IndexState.REMOVE_IN_PROGRESS);
