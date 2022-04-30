@@ -19,7 +19,7 @@ public class Dstore {
         int port = convertStringToInt(args[0]);
         int cport = convertStringToInt(args[1]);
         int timeout = convertStringToInt(args[2]);
-        file_folder = args[3];
+        file_folder = args[3]+"/";
 
         File storage_folder = new File(file_folder);
         if (!Files.isDirectory(Paths.get(file_folder))) {
@@ -182,7 +182,7 @@ public class Dstore {
                 if(command.equals("STORE")){
                     out.println("ACK");
                 }else if(command.equals("LOAD_DATA")){
-                   // outputStream.write(command);
+                    // outputStream.write(command);
                     BufferedReader in = new BufferedReader(new FileReader(file_folder + filename));
                     String str;
                     while ((str = in.readLine()) != null) {
