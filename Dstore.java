@@ -1,3 +1,5 @@
+package mitko.code;
+
 import java.io.*;
 import java.net.*;
 import java.nio.file.Files;
@@ -126,7 +128,9 @@ public class Dstore {
                     File file_to_write = files_to_be_stored.firstElement();
                     Path fileName = Path.of(file_to_write.getPath());
                     try {
-                        Files.writeString(fileName, cmd);
+                        FileWriter myWriter = new FileWriter(file_to_write.getPath());
+                        myWriter.write(cmd);
+                        myWriter.close();
                         // Dont write string write data
                     } catch (IOException e) {
                         e.printStackTrace();
