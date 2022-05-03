@@ -8,7 +8,6 @@ public class Dstore {
 
     private static HashSet<File> stored_files = new HashSet<>();
     private static String file_folder;
-    //private static ServiceThread controller_connection;
 
     public static void main(String [] args) {
         Socket socket_controller;
