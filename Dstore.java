@@ -191,12 +191,14 @@ public class Dstore {
                 if(command.equals("STORE")){
                     out.println("ACK");
                 }else if(command.equals("LOAD_DATA")){
-                    BufferedReader in = new BufferedReader(new FileReader(file_folder + filename));
-                    String str;
-                    while ((str = in.readLine()) != null) {
-                        outputStream.write(str.getBytes());// new thread
+                    FileInputStream file_in = new FileInputStream(file_folder + filename);
+                    byte[] buffer = new byte[1024];
+                    int bytesRead;
+
+                    while ((bytesRead = file_in.read(buffer)) != -1) {
+                        outputStream.write(buffer);// new thread
                     }
-                    in.close();
+                    file_in.close();
                 }
             } catch(Exception e) {
                 System.err.println("error: " + e);
