@@ -98,6 +98,7 @@ public class Dstore {
                 if (file_output != null){
                     file_output.close();
                     stored_files.add(file_to_write);
+                    file_output = null;
                     new Thread(new ControllerConnection(out_to_controller, "STORE_ACK", file_to_write.getName())).start();
                 }
                 socket.close();
@@ -125,6 +126,7 @@ public class Dstore {
                     boolean result;
                     try {
                         if(file_to_write.exists()){
+                            file_output = new FileOutputStream(file_to_write);
                             new Thread(new ClientConnection(out, command[0])).start();
                         }else{
                             result = file_to_write.createNewFile();
