@@ -3,18 +3,18 @@ import java.net.*;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.HashSet;
-import java.util.Stack;
 
 public class Dstore {
 
     private static HashSet<File> stored_files = new HashSet<>();
-    private static Stack<File> files_to_be_stored = new Stack<>();
     private static String file_folder;
+    //private static ServiceThread controller_connection;
 
     public static void main(String [] args) {
         Socket socket_controller;
         ServerSocket ss = null;
         PrintWriter out_to_controller;
+
 
         int port = convertStringToInt(args[0]);
         int cport = convertStringToInt(args[1]);
@@ -38,12 +38,12 @@ public class Dstore {
             socket_controller = new Socket(address, cport);
             out_to_controller = new PrintWriter(socket_controller.getOutputStream(), true);
             out_to_controller.println("JOIN " + port);
-
+            //start controller connection;
             ss = new ServerSocket(port);
 
             while(true) {
                 Socket socket = ss.accept();
-                new Thread(new ServiceThreadDstore(socket, out_to_controller)).start();
+                new Thread(new ServiceThread(socket, out_to_controller)).start();
             }
         } catch(Exception e) { System.err.println("error: " + e);
         } finally {
@@ -52,38 +52,60 @@ public class Dstore {
         }
     }
 
-    static class ServiceThreadDstore implements Runnable {
+    static class ServiceThread implements Runnable {
         OutputStream outputStream;
         PrintStream out_to_client;
         PrintWriter out_to_controller;
         BufferedReader in;
+        InputStream inputStream;
         Socket socket;
 
-        ServiceThreadDstore(Socket socket, PrintWriter out_to_controller) {
+        File file_to_write;
+        OutputStream file_output = null;
+
+
+        ServiceThread(Socket socket, PrintWriter out_to_controller) {
             this.socket = socket;
             this.out_to_controller = out_to_controller;
             try {
-                in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-                out_to_client = new PrintStream(socket.getOutputStream());
+                inputStream = socket.getInputStream();
+                in = new BufferedReader(new InputStreamReader(inputStream));
                 outputStream = socket.getOutputStream();
+                out_to_client = new PrintStream(outputStream);
             } catch (IOException e) {
                 e.printStackTrace();
             }
         }
         public void run() {
             try {
-
                 String line;
-                while((line = in.readLine()) != null) {
-                    System.out.println(line); //print the received command
-                    readCommands(line, outputStream, out_to_client, out_to_controller);
+                byte[] buffer = new byte[1024];
+                int bytesRead;
+
+                while ((bytesRead = inputStream.read(buffer)) != -1) {
+                    if(file_output != null){
+                        file_output.write(buffer, 0, bytesRead);
+                    }else{
+                        byte[] temp = new byte[bytesRead-2];
+                        for(int i = 0; i<temp.length; i++){
+                            temp[i] = buffer[i];
+                        }
+                        line = new String(temp);
+                        System.out.println(line); //print the received command
+                        readCommands(line, outputStream, out_to_client, out_to_controller);
+                    }
+                }
+                if (file_output != null){
+                    file_output.close();
+                    stored_files.add(file_to_write);
+                    new Thread(new ControllerConnection(out_to_controller, "STORE_ACK", file_to_write.getName())).start();
                 }
                 socket.close();
             } catch(Exception e) {
                 System.err.println("error: " + e);
             }
         }
-        private static void readCommands(String cmd, OutputStream outputStream, PrintStream out, PrintWriter out_to_controller) {
+        private void readCommands(String cmd, OutputStream outputStream, PrintStream out, PrintWriter out_to_controller) {
             String[] command = cmd.split(" ");
             switch (command[0]) {
                 case "REMOVE":
@@ -99,17 +121,15 @@ public class Dstore {
                     break;
                 case "STORE":
                     //createFile(command[1]);
-                    File file_to_store = new File(file_folder + command[1]);
+                    file_to_write = new File(file_folder + command[1]);
                     boolean result;
                     try {
-                        if(file_to_store.exists()){
-                            files_to_be_stored.add(file_to_store);
+                        if(file_to_write.exists()){
                             new Thread(new ClientConnection(out, command[0])).start();
                         }else{
-                            result = file_to_store.createNewFile();
+                            result = file_to_write.createNewFile();
                             if(result){
-                                //stored_file = file_to_store;//ne mi haresva
-                                files_to_be_stored.add(file_to_store);
+                                file_output = new FileOutputStream(file_to_write);
                                 new Thread(new ClientConnection(out, command[0])).start();
                             }
                         }
@@ -121,19 +141,6 @@ public class Dstore {
                     new Thread(new ClientConnection(outputStream, command[0], command[1])).start();
                     break;
                 default:
-                    //store and send ACK to controler;
-                    File file_to_write = files_to_be_stored.firstElement();
-                    try {
-                        FileWriter myWriter = new FileWriter(file_to_write.getPath());
-                        myWriter.write(cmd);
-                        myWriter.close();
-                        // Dont write string write data
-                    } catch (IOException e) {
-                        e.printStackTrace();
-                    }
-                    stored_files.add(file_to_write);
-                    files_to_be_stored.remove(files_to_be_stored.firstElement());
-                    new Thread(new ControllerConnection(out_to_controller, command[0], file_to_write.getName())).start();
                     break;
             }
         }
@@ -182,7 +189,6 @@ public class Dstore {
                 if(command.equals("STORE")){
                     out.println("ACK");
                 }else if(command.equals("LOAD_DATA")){
-                    // outputStream.write(command);
                     BufferedReader in = new BufferedReader(new FileReader(file_folder + filename));
                     String str;
                     while ((str = in.readLine()) != null) {
