@@ -8,6 +8,7 @@ public class Dstore {
 
     private static HashSet<File> stored_files = new HashSet<>();
     private static String file_folder;
+    //private static ServiceThread controller_connection;
 
     public static void main(String [] args) {
         Socket socket_controller;
@@ -18,7 +19,7 @@ public class Dstore {
         int port = convertStringToInt(args[0]);
         int cport = convertStringToInt(args[1]);
         int timeout = convertStringToInt(args[2]);
-        file_folder = args[3]+"/";
+        file_folder ="./" + args[3] + "/";
 
         File storage_folder = new File(file_folder);
         if (!Files.isDirectory(Paths.get(file_folder))) {
@@ -85,8 +86,9 @@ public class Dstore {
                     if(file_output != null){
                         file_output.write(buffer, 0, bytesRead);
                     }else{
-                        byte[] temp = new byte[bytesRead-2];
-                        for(int i = 0; i<temp.length; i++){
+                        int size = bytesRead - 1;
+                        byte[] temp = new byte[size];
+                        for(int i = 0; i < size; i++){
                             temp[i] = buffer[i];
                         }
                         line = new String(temp);
@@ -190,7 +192,9 @@ public class Dstore {
                 if(command.equals("STORE")){
                     out.println("ACK");
                 }else if(command.equals("LOAD_DATA")){
-                    FileInputStream file_in = new FileInputStream(file_folder + filename);
+                    String file_path = file_folder+filename;
+                    System.out.println(file_path);
+                    FileInputStream file_in = new FileInputStream(file_path);
                     byte[] buffer = new byte[1024];
                     int bytesRead;
 
