@@ -139,7 +139,7 @@ public class Dstore {
                     if(file_output != null){
                         file_output.write(buffer, 0, bytesRead);
                     }else{
-                        int size = bytesRead - 2;
+                        int size = bytesRead - 1;
                         byte[] temp = new byte[size];
                         for(int i = 0; i < size; i++){
                             temp[i] = buffer[i];
