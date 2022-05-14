@@ -1,14 +1,16 @@
+package mitko.code;
+
 import java.io.*;
 import java.net.*;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Timer;
 import java.util.concurrent.CountDownLatch;
 
 public class Controller {
 
     private static class Index {
-        static HashMap<String, Integer> stored_files = new HashMap<>();
         static HashMap<String, IndexState> files_states = new HashMap<>();
     }
 
@@ -21,6 +23,7 @@ public class Controller {
 
     private static HashSet<Integer> dstores_ports;
     private static HashMap<ServiceThread, String> dstores_connections;
+    private static HashMap<Integer, PrintStream> dstores_outs = new HashMap<>();
     private static HashMap<String, Integer> stored_files = new HashMap<>();
     private static HashMap<PrintStream, Integer> load_to_client = new HashMap<>();
 
@@ -61,12 +64,12 @@ public class Controller {
 
     static class ServiceThread implements Runnable {
         BufferedReader in;
-        PrintStream out_to_client;
+        PrintStream out_to_socket;
         Socket socket;
 
         ServiceThread(Socket socket) throws IOException {
             this.socket = socket;
-            out_to_client = new PrintStream(socket.getOutputStream());
+            out_to_socket = new PrintStream(socket.getOutputStream());
             in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
         }
         public void run() {
@@ -80,15 +83,16 @@ public class Controller {
                     if(commands_from_client.contains(command)) {
                         System.out.println("Client: "+line);
                         if (dstores_ports.size() < R) {
-                            out_to_client.println("ERROR_NOT_ENOUGH_DSTORES");
+                            out_to_socket.println("ERROR_NOT_ENOUGH_DSTORES");
                         } else {
-                            new Thread(new ClientConnection(out_to_client, split_line, ss)).start();
+                            new Thread(new ClientConnection(out_to_socket, split_line, ss)).start();
                         }
                     }else{
                         System.out.println("Dstore: "+line);
                         if(command.equals("JOIN")) {
                             dstores_ports.add(convertStringToInt(split_line[1]));
                             dstores_connections.put(this, "JOIN");
+                            dstores_outs.put(convertStringToInt(split_line[1]), out_to_socket);
                             //rebalance
                         }else {
                             if (command.equals("STORE_ACK") || command.equals("REMOVE_ACK")){
@@ -128,24 +132,21 @@ public class Controller {
                     out.println(files_names);
                     break;
                 case "STORE":
-                    if (Index.files_states.containsKey(filename) && Index.files_states.get(filename) == IndexState.STORE_IN_PROGRESS) {
+                    if (stored_files.containsKey(filename)
+                            || Index.files_states.get(filename) == IndexState.STORE_IN_PROGRESS) {
                         out.println("ERROR_FILE_ALREADY_EXISTS");
                     } else {
                         Index.files_states.put(filename, IndexState.STORE_IN_PROGRESS);
-                        Index.stored_files.put(filename, Integer.parseInt(split_line[2]));
-                        ////////
+
                         stored_files.put(filename, Integer.parseInt(split_line[2]));
-                        ///////
                         StringBuilder dports = new StringBuilder();
                         int i = 0;
                         for (Integer p : dstores_ports) {
                             dports.append(" ").append(p.toString());
                             i++;
                         }
-                        //ACKs.put(filename, i);
                         out.println("STORE_TO" + dports);
                         //start thread with all dstores and wait
-
                         CountDownLatch latch = new CountDownLatch(i);
                         for(ServiceThread dstore_connection : dstores_connections.keySet()) {
                             new Thread(new ACK_Receiver(dstore_connection, "STORE_ACK "+filename, latch)).start();
@@ -153,13 +154,29 @@ public class Controller {
 
                         try {
                             latch.await();
-                           // stored_files.put(filename, Index.stored_files.get(filename));
                             Index.files_states.put(filename, IndexState.STORE_COMPLETE);
                             out.println("STORE_COMPLETE"); // to client
+
                         } catch (InterruptedException e) {
                             e.printStackTrace();
                         }
+
+                        /*try {
+                            ss.setSoTimeout(200);
+                        } catch (SocketException e) {
+                            e.printStackTrace();
+                        }
+
+                        try {
+                            ss.getSoTimeout();
+                            System.out.println("WOW");
+                        } catch (SocketTimeoutException ste) {
+                            System.out.println("### Timed out after 5 seconds");
+                        } catch (IOException e) {
+                            e.printStackTrace();
+                        }*/
                     }
+
                     break;
                 case "LOAD": {
                     Integer[] dports = dstores_ports.toArray(new Integer[0]);
@@ -206,12 +223,10 @@ public class Controller {
                             int i = 0;
                             address = InetAddress.getLocalHost();
                             for (int dport : dports) {
-                                socket = new Socket(address, dport);
-                                out_to_dport = new PrintWriter(socket.getOutputStream(), true);
-                                out_to_dport.println("REMOVE " + filename);
+                                dstores_outs.get(dport).println("REMOVE " + filename);
                                 i++;
                             }
-                            //Can be function
+
                             CountDownLatch latch = new CountDownLatch(i);
                             for(ServiceThread dstore_connection : dstores_connections.keySet()) {
                                 new Thread(new ACK_Receiver(dstore_connection, "REMOVE_ACK "+filename, latch)).start();
