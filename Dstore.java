@@ -8,7 +8,6 @@ public class Dstore {
 
     private static HashSet<File> stored_files = new HashSet<>();
     private static String file_folder;
-    //private static ServiceThread controller_connection;
 
     public static void main(String [] args) {
         Socket socket_controller;
@@ -141,12 +140,10 @@ public class Dstore {
                     }else{
                         int size = bytesRead - 1;
                         byte[] temp = new byte[size];
-                        for(int i = 0; i < size; i++){
-                            temp[i] = buffer[i];
-                        }
+                        System.arraycopy(buffer, 0, temp, 0, size);
                         line = new String(temp);
                         System.out.println(line); //print the received command
-                        readCommands(line, outputStream, out_to_client, out_to_controller);
+                        readCommands(line, outputStream, out_to_client);
                     }
                 }
                 if (file_output != null){
@@ -160,7 +157,7 @@ public class Dstore {
                 System.err.println("error: " + e);
             }
         }
-        private void readCommands(String cmd, OutputStream outputStream, PrintStream out, PrintWriter out_to_controller) {
+        private void readCommands(String cmd, OutputStream outputStream, PrintStream out) {
             String[] command = cmd.split(" ");
             switch (command[0]) {
                 case "STORE":
