@@ -35,10 +35,11 @@ public class Dstore {
         }
         try {
             InetAddress address = InetAddress.getLocalHost();
-            socket_controller = new Socket(address, cport);
+            socket_controller = new Socket(address, cport);  //start controller connection;
             out_to_controller = new PrintWriter(socket_controller.getOutputStream(), true);
             out_to_controller.println("JOIN " + port);
-            //start controller connection;
+            new Thread(new ReadFromController(socket_controller, out_to_controller)).start();
+
             ss = new ServerSocket(port);
 
             while(true) {
@@ -52,6 +53,57 @@ public class Dstore {
         }
     }
 
+    static class ReadFromController implements Runnable {
+        OutputStream outputStream;
+        PrintWriter out_to_controller;
+        BufferedReader in;
+        InputStream inputStream;
+        Socket socket;
+
+        ReadFromController(Socket socket, PrintWriter out_to_controller) {
+            this.socket = socket;
+            this.out_to_controller = out_to_controller;
+            try {
+                inputStream = socket.getInputStream();
+                in = new BufferedReader(new InputStreamReader(inputStream));
+                outputStream = socket.getOutputStream();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+        public void run() {
+            try {
+                String line;
+                while((line = in.readLine()) != null) {
+                    System.out.println("Controller: "+line);
+                    readCommands(line);
+                }
+            } catch (IOException ex) {
+                ex.printStackTrace();
+            }
+            try {
+                socket.close();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+        private void readCommands(String cmd) {
+            String[] command = cmd.split(" ");
+            if ("REMOVE".equals(command[0])) {
+                String removed_file_name = command[1];
+                File file = new File(file_folder + removed_file_name);
+                if (file.exists()) {
+                    file.delete();
+                    stored_files.remove(file);
+                    new Thread(new ControllerConnection(out_to_controller, command[0], removed_file_name)).start();
+                } else {
+                    new Thread(new ControllerConnection(out_to_controller, "ERROR_FILE_DOES_NOT_EXIST", removed_file_name)).start();
+                }
+            }
+        }
+    }
+
+
     static class ServiceThread implements Runnable {
         OutputStream outputStream;
         PrintStream out_to_client;
@@ -61,6 +113,7 @@ public class Dstore {
         Socket socket;
 
         File file_to_write;
+
         OutputStream file_output = null;
 
 
@@ -86,7 +139,7 @@ public class Dstore {
                     if(file_output != null){
                         file_output.write(buffer, 0, bytesRead);
                     }else{
-                        int size = bytesRead - 1;
+                        int size = bytesRead - 2;
                         byte[] temp = new byte[size];
                         for(int i = 0; i < size; i++){
                             temp[i] = buffer[i];
@@ -110,17 +163,6 @@ public class Dstore {
         private void readCommands(String cmd, OutputStream outputStream, PrintStream out, PrintWriter out_to_controller) {
             String[] command = cmd.split(" ");
             switch (command[0]) {
-                case "REMOVE":
-                    String removed_file_name = command[1];
-                    File file = new File(file_folder + removed_file_name);
-                    if(file.exists()){
-                        file.delete();
-                        stored_files.remove(file);
-                        new Thread(new ControllerConnection(out_to_controller, command[0], removed_file_name)).start();
-                    }else{
-                        new Thread(new ControllerConnection(out_to_controller, "ERROR_FILE_DOES_NOT_EXIST", removed_file_name)).start();
-                    }
-                    break;
                 case "STORE":
                     //createFile(command[1]);
                     file_to_write = new File(file_folder + command[1]);
@@ -193,12 +235,14 @@ public class Dstore {
                     out.println("ACK");
                 }else if(command.equals("LOAD_DATA")){
                     String file_path = file_folder+filename;
+                    int l = file_path.getBytes().length;
+                    // System.out.println("./dstore1/test4.jpg".equals(""));
                     System.out.println(file_path);
+
                     FileInputStream file_in = new FileInputStream(file_path);
                     byte[] buffer = new byte[1024];
-                    int bytesRead;
 
-                    while ((bytesRead = file_in.read(buffer)) != -1) {
+                    while ((file_in.read(buffer)) != -1) {
                         outputStream.write(buffer);// new thread
                     }
                     file_in.close();
