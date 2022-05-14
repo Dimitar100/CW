@@ -131,7 +131,8 @@ public class Controller {
                     break;
                 case "STORE":
                     if (stored_files.containsKey(filename)
-                            || Index.files_states.get(filename) == IndexState.STORE_IN_PROGRESS) {
+                            || Index.files_states.get(filename) == IndexState.STORE_IN_PROGRESS
+                            || Index.files_states.containsKey(filename)) {
                         out.println("ERROR_FILE_ALREADY_EXISTS");
                     } else {
                         Index.files_states.put(filename, IndexState.STORE_IN_PROGRESS);
@@ -232,6 +233,7 @@ public class Controller {
                             try {
                                 latch.await();
                                 Index.files_states.put(filename, IndexState.REMOVE_COMPLETE);
+                                Index.files_states.remove(filename);
                                 stored_files.remove(filename);
                                 out.println("REMOVE_COMPLETE"); // to client
                             } catch (InterruptedException e) {
