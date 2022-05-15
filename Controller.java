@@ -261,14 +261,14 @@ public class Controller {
             String line;
             try {
                 dstores_connections.put(port, "JOIN");
-                while((line = in.readLine()) != null) {
-                   // String[] split_line = line.split(" ");
-                    System.out.println("Dstore: "+line);
+                while ((line = in.readLine()) != null) {
+                    // String[] split_line = line.split(" ");
+                    System.out.println("Dstore: " + line);
                     dstores_connections.put(port, line);
                 }
                 socket.close();
-            } catch(Exception e) {
-                //System.err.println("error: " + e);
+            }catch (IOException e) {
+                //e.printStackTrace();
                 System.out.println("Dstore " + port + ": " + "disconnected");
                 dstores.remove(port);
             }
