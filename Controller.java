@@ -160,7 +160,7 @@ public class Controller {
                             //int number_of_dstores = Index.dstores.size();
                             //int number_of_files = Index.stored_files.size();
                             out.println("STORE_TO" + dports);
-                            CountDownLatch latch = new CountDownLatch(R);//not sure
+                            CountDownLatch latch = new CountDownLatch(i);//not sure
 
                             for (Integer dport : dstores_ports) {
                                 new Thread(new ACK_Receiver(dport, "STORE_ACK " + filename, latch)).start();
