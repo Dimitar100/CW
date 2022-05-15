@@ -232,10 +232,6 @@ public class Dstore {
                     out.println("ACK");
                 }else if(command.equals("LOAD_DATA")){
                     String file_path = file_folder+filename;
-                    int l = file_path.getBytes().length;
-                    // System.out.println("./dstore1/test4.jpg".equals(""));
-                    System.out.println(file_path);
-
                     FileInputStream file_in = new FileInputStream(file_path);
                     byte[] buffer = new byte[1024];
 
