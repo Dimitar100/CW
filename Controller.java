@@ -9,7 +9,6 @@ public class Controller {
     private static class Index {
         private static HashMap<String, Integer> stored_files = new HashMap<>();
         static HashMap<String, IndexState> files_states = new HashMap<>();
-       // static HashMap<Integer, ArrayList<String>> dstores = new HashMap<>();
         static HashMap<String, ArrayList<Integer>> dstores_storing_file = new HashMap<>();
     }
 
@@ -21,7 +20,6 @@ public class Controller {
     }
 
     private static HashSet<Integer> dstores = new HashSet<>();
-    private static HashMap<Integer, String> dstores_connections = new HashMap<>();
     private static HashMap<Integer, PrintStream> dstores_outs = new HashMap<>();
     private static HashMap<PrintStream, Integer> load_to_client = new HashMap<>();
 
@@ -42,8 +40,7 @@ public class Controller {
             ss = new ServerSocket(port);
 
             while (true) {
-                Socket client = ss.accept(); // accept connections
-                //Read on cport
+                Socket client = ss.accept();
                 new Thread(new ServiceThread(client)).start();
             }
         } catch(Exception e) { System.err.println("error: " + e);
@@ -163,7 +160,7 @@ public class Controller {
                             CountDownLatch latch = new CountDownLatch(i);//not sure
 
                             for (Integer dport : dstores_ports) {
-                                new Thread(new ACK_Receiver(dport, "STORE_ACK " + filename, latch)).start();
+                                ReadFromDstore.getConnection(dport).setLatch(latch);
                             }
 
                             try {
@@ -175,6 +172,7 @@ public class Controller {
                                     out.println("STORE_COMPLETE"); // to client
                                 } else {
                                     Index.files_states.remove(filename);
+                                    System.out.println("NO ACK");
                                 }
                             } catch (InterruptedException e) {
                                 e.printStackTrace();
@@ -219,12 +217,13 @@ public class Controller {
                         } else {
                             Index.files_states.put(filename, IndexState.REMOVE_IN_PROGRESS);
                             CountDownLatch latch = new CountDownLatch(dports.size());
+
                             for (Integer dport : dports) {
                                 dstores_outs.get(dport).println("REMOVE " + filename);
-                                new Thread(new ACK_Receiver(dport, "REMOVE_ACK " + filename, latch)).start();
+                                ReadFromDstore.getConnection(dport).setLatch(latch);
                             }
                             try {
-                                latch.await(timeout, TimeUnit.MILLISECONDS);
+                                latch.await();
                                 Index.files_states.put(filename, IndexState.REMOVE_COMPLETE);
                                 Index.files_states.remove(filename);
                                 Index.stored_files.remove(filename);
@@ -242,11 +241,13 @@ public class Controller {
     }
 
     static class ReadFromDstore implements Runnable{
+        static ArrayList<ReadFromDstore> all_dstores = new ArrayList<>();
         PrintStream out;
         BufferedReader in;
         ServerSocket ss;
         Socket socket;
         Integer port;
+        CountDownLatch latch;
 
         ReadFromDstore(PrintStream out, BufferedReader in, ServerSocket ss, Socket socket, Integer port) {
             this.out = out;
@@ -258,43 +259,45 @@ public class Controller {
 
         @Override
         public void run() {
+            all_dstores.add(this);
             String line;
             try {
-                dstores_connections.put(port, "JOIN");
                 while ((line = in.readLine()) != null) {
                     // String[] split_line = line.split(" ");
                     System.out.println("Dstore: " + line);
-                    dstores_connections.put(port, line);
+                    if(line.contains("STORE_ACK") || line.contains("REMOVE_ACK")){
+                        latch.countDown();
+                    }
                 }
-                socket.close();
-            }catch (IOException e) {
-                //e.printStackTrace();
                 System.out.println("Dstore " + port + ": " + "disconnected");
                 dstores.remove(port);
+                all_dstores.remove(this);
+                socket.close();
+            }catch (IOException e) {
+               // e.printStackTrace();
+                System.out.println("Dstore " + port + ": " + "disconnected");
+                dstores.remove(port);
+                all_dstores.remove(this);
             }
         }
-    }
 
-    static class ACK_Receiver implements Runnable {
-        Integer dport;
-        String expected_line;
-        CountDownLatch latch;
-
-        ACK_Receiver(Integer dport, String expected_line, CountDownLatch latch){
-            this.dport = dport;
-            this.expected_line = expected_line;
+        void setLatch(CountDownLatch latch) {
             this.latch = latch;
         }
-        public void run() {
-            String line;
-            while(true) {
-                line = dstores_connections.get(dport);
-                if(line.equals(expected_line)){
-                    dstores_connections.put(dport, "");
-                    latch.countDown();
+
+        Integer getPort() {
+            return port;
+        }
+
+        static ReadFromDstore getConnection(Integer port){
+            ReadFromDstore result = null;
+            for(ReadFromDstore r : all_dstores){
+                if (port.equals(r.getPort())){
+                    result = r;
                     break;
                 }
             }
+            return result;
         }
     }
 
