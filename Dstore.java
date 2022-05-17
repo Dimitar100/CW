@@ -98,6 +98,8 @@ public class Dstore {
                 } else {
                     new Thread(new ControllerConnection(out_to_controller, "ERROR_FILE_DOES_NOT_EXIST", removed_file_name)).start();
                 }
+            }else if("LIST".equals(command[0])){
+                new Thread(new ControllerConnection(out_to_controller, command[0])).start();
             }
         }
     }
@@ -204,12 +206,23 @@ public class Dstore {
             this.command = command;
             this.out = out;
         }
+        ControllerConnection(PrintWriter out, String command) {
+
+            this.command = command;
+            this.out = out;
+        }
         public void run() {
             try {
                 if(command.equals("REMOVE")){
                     out.println("REMOVE_ACK " + fileName);
-                }else if(command.equals("ERROR_FILE_DOES_NOT_EXIST")){
+                }else if(command.equals("ERROR_FILE_DOES_NOT_EXIST")) {
                     out.println(command);
+                }else if(command.equals("LIST")){
+                    StringBuilder files_names = new StringBuilder("LIST");
+                    for (File f: stored_files) {
+                        files_names.append(" ").append(f.getName());
+                    }
+                    out.println(files_names);
                 }else{
                     out.println("STORE_ACK " + fileName);
                 }
