@@ -8,16 +8,16 @@ public class Dstore {
 
     private static HashSet<File> stored_files = new HashSet<>();
     private static String file_folder;
+    private static int timeout;
 
     public static void main(String [] args) {
         Socket socket_controller;
         ServerSocket ss = null;
         PrintWriter out_to_controller;
 
-
         int port = convertStringToInt(args[0]);
         int cport = convertStringToInt(args[1]);
-        int timeout = convertStringToInt(args[2]);
+        timeout = convertStringToInt(args[2]);
         file_folder ="./" + args[3] + "/";
 
         File storage_folder = new File(file_folder);
@@ -43,7 +43,7 @@ public class Dstore {
 
             while(true) {
                 Socket socket = ss.accept();
-                new Thread(new ServiceThread(socket, out_to_controller)).start();
+                new Thread(new ServiceThread(socket, out_to_controller, ss)).start();
             }
         } catch(Exception e) { System.err.println("error: " + e);
         } finally {
@@ -110,15 +110,18 @@ public class Dstore {
         BufferedReader in;
         InputStream inputStream;
         Socket socket;
+        ServerSocket ss;
 
         File file_to_write;
-
         OutputStream file_output = null;
 
+        int file_size;
 
-        ServiceThread(Socket socket, PrintWriter out_to_controller) {
+
+        ServiceThread(Socket socket, PrintWriter out_to_controller, ServerSocket ss) {
             this.socket = socket;
             this.out_to_controller = out_to_controller;
+            this.ss = ss;
             try {
                 inputStream = socket.getInputStream();
                 in = new BufferedReader(new InputStreamReader(inputStream));
@@ -131,26 +134,31 @@ public class Dstore {
         public void run() {
             try {
                 String line;
-                byte[] buffer = new byte[1024];
-                int bytesRead;
+                while(true) {
+                    try {
+                        if (file_output == null) {
+                            line = in.readLine();
+                            if(line != null) {
+                                System.out.println(line);
+                                readCommands(line, outputStream, out_to_client);
+                            }else{
+                                break;
+                            }
+                        } else {
+                            byte[] buffer = new byte[file_size];
+                            int bytesRead;
+                            bytesRead = inputStream.readNBytes(buffer, 0, file_size);
 
-                while ((bytesRead = inputStream.read(buffer)) != -1) {
-                    if(file_output != null){
-                        file_output.write(buffer, 0, bytesRead);
-                    }else{
-                        int size = bytesRead - 1;
-                        byte[] temp = new byte[size];
-                        System.arraycopy(buffer, 0, temp, 0, size);
-                        line = new String(temp);
-                        System.out.println(line); //print the received command
-                        readCommands(line, outputStream, out_to_client);
+                            file_output.write(buffer, 0, bytesRead);
+                            file_output.close();
+                            stored_files.add(file_to_write);
+                            file_output = null;
+                            ss.setSoTimeout(0);
+                            new Thread(new ControllerConnection(out_to_controller, "STORE_ACK", file_to_write.getName())).start();
+                        }
+                    } catch (SocketTimeoutException e) {
+                        System.out.println("time's up");
                     }
-                }
-                if (file_output != null){
-                    file_output.close();
-                    stored_files.add(file_to_write);
-                    file_output = null;
-                    new Thread(new ControllerConnection(out_to_controller, "STORE_ACK", file_to_write.getName())).start();
                 }
                 socket.close();
             } catch(Exception e) {
@@ -161,8 +169,13 @@ public class Dstore {
             String[] command = cmd.split(" ");
             switch (command[0]) {
                 case "STORE":
-                    //createFile(command[1]);
+                    try {
+                        ss.setSoTimeout(timeout); // set timeout
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
                     file_to_write = new File(file_folder + command[1]);
+                    file_size = convertStringToInt(command[2]);
                     boolean result;
                     try {
                         if(file_to_write.exists()){
@@ -180,6 +193,11 @@ public class Dstore {
                     }
                     break;
                 case "LOAD_DATA":
+                    try {
+                        ss.setSoTimeout(timeout);
+                    } catch (SocketException e) {
+                        e.printStackTrace();
+                    }
                     new Thread(new ClientConnection(outputStream, command[0], command[1])).start();
                     break;
                 default:
