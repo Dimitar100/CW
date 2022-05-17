@@ -73,7 +73,7 @@ public class Controller {
                     dstores.add(dport);
                     dstores_outs.put(dport, out_to_socket);
                     new Thread(new ReadFromDstore(out_to_socket, in, ss, socket, dport)).start();
-                    //rebalance
+                    rebalance();
                 } else {
                     System.out.println("Client: "+line);
                     new Thread(new HandleClientCommands(out_to_socket, split_line, ss)).start();
@@ -208,7 +208,7 @@ public class Controller {
                     case "REMOVE": {
                         ArrayList<Integer> dports = Index.dstores_storing_file.get(filename);
 
-                        if (!Index.files_states.containsKey(filename)) {
+                        if (!Index.files_states.containsKey(filename) || !Index.stored_files.containsKey(filename)) {
                             out.println("ERROR_FILE_DOES_NOT_EXIST");
                         } else if (Index.files_states.get(filename).equals(IndexState.STORE_IN_PROGRESS)
                                 || Index.files_states.get(filename).equals(IndexState.REMOVE_IN_PROGRESS)
@@ -298,6 +298,12 @@ public class Controller {
                 }
             }
             return result;
+        }
+    }
+
+    private static void rebalance(){
+        for(Integer dport : dstores_outs.keySet()){
+            dstores_outs.get(dport).println("LIST");
         }
     }
 
