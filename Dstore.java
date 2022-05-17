@@ -102,7 +102,6 @@ public class Dstore {
         }
     }
 
-
     static class ServiceThread implements Runnable {
         OutputStream outputStream;
         PrintStream out_to_client;
@@ -114,9 +113,7 @@ public class Dstore {
 
         File file_to_write;
         OutputStream file_output = null;
-
         int file_size;
-
 
         ServiceThread(Socket socket, PrintWriter out_to_controller, ServerSocket ss) {
             this.socket = socket;
@@ -135,30 +132,32 @@ public class Dstore {
             try {
                 String line;
                 while(true) {
-                    try {
-                        if (file_output == null) {
-                            line = in.readLine();
-                            if(line != null) {
-                                System.out.println(line);
-                                readCommands(line, outputStream, out_to_client);
-                            }else{
-                                break;
-                            }
-                        } else {
-                            byte[] buffer = new byte[file_size];
-                            int bytesRead;
-                            bytesRead = inputStream.readNBytes(buffer, 0, file_size);
 
-                            file_output.write(buffer, 0, bytesRead);
-                            file_output.close();
-                            stored_files.add(file_to_write);
-                            file_output = null;
-                            ss.setSoTimeout(0);
-                            new Thread(new ControllerConnection(out_to_controller, "STORE_ACK", file_to_write.getName())).start();
+                    if (file_output == null) {
+                        line = in.readLine();
+                        if(line != null) {
+                            System.out.println(line);
+                            readCommands(line, outputStream, out_to_client);
+                        }else{
+                            break;
                         }
-                    } catch (SocketTimeoutException e) {
-                        System.out.println("time's up");
+                    } else {
+                       //
+                        byte[] buffer = new byte[file_size];
+                        int bytesRead;
+                        //ss.setSoTimeout(timeout); // set timeout
+                        try {
+                            bytesRead = inputStream.readNBytes(buffer, 0, file_size);
+                            file_output.write(buffer, 0, bytesRead);
+                        } catch (SocketTimeoutException e) {
+                            e.printStackTrace();
+                        }
+                        file_output.close();
+                        stored_files.add(file_to_write);
+                        file_output = null;
+                        new Thread(new ControllerConnection(out_to_controller, "STORE_ACK", file_to_write.getName())).start();
                     }
+
                 }
                 socket.close();
             } catch(Exception e) {
@@ -169,11 +168,6 @@ public class Dstore {
             String[] command = cmd.split(" ");
             switch (command[0]) {
                 case "STORE":
-                    try {
-                        ss.setSoTimeout(timeout); // set timeout
-                    } catch (IOException e) {
-                        e.printStackTrace();
-                    }
                     file_to_write = new File(file_folder + command[1]);
                     file_size = convertStringToInt(command[2]);
                     boolean result;
@@ -193,11 +187,6 @@ public class Dstore {
                     }
                     break;
                 case "LOAD_DATA":
-                    try {
-                        ss.setSoTimeout(timeout);
-                    } catch (SocketException e) {
-                        e.printStackTrace();
-                    }
                     new Thread(new ClientConnection(outputStream, command[0], command[1])).start();
                     break;
                 default:
