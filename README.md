@@ -19,3 +19,18 @@ distributed evenly over the Dstores.
 
 
 ![Capture](https://user-images.githubusercontent.com/90190006/197465385-436a2f86-8aa4-4901-9a7e-3146c5c3e1aa.PNG)
+
+Controller, Dstores and Clients will communicate with each other via TCP connections. 
+Because they will be on the same machine, the Dstores will listen on different ports.
+
+The Dstores will establish connections with the Controller as soon as they start. These 
+connections will be persistent (i.e., they are expected to be kept alive for as long as the 
+Dstore is running). If the Controller detects that the connection with one of the Dstores
+dropped, then such a Dstore will be removed from the set of Dstores that are part of the 
+storage system.
+
+Processes should send textual messages (e.g., LIST – see below) using the println()
+method of PrintWriter class, and receive using the readLine() method of BufferedReader
+class. For data messages (i.e., file content), processes should send using the write()
+method of OutputStream class and receive using the readNBytes() method of 
+InputStream class.
